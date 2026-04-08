@@ -1,0 +1,8 @@
+{
+  "rss_feeds": ["https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja"],
+  "workflow": [
+    { "id": "filter", "model": "gpt-4o-mini", "prompt": "1-10でスコアを付け、{\"items\":[{\"url\":\"\",\"score\":8}]}形式で返せ", "enabled": true },
+    { "id": "analyst", "model": "o3-mini", "prompt": "詳細な日本語分析レポートを作成せよ", "enabled": true }
+  ],
+  "settings": { "fetch_days": 3, "score_threshold": 8, "embedding_model": "text-embedding-3-small", "similarity_threshold": 0.85 }
+}

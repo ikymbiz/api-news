@@ -76,7 +76,7 @@
         <section id="tab-workflow" class="tab-content space-y-4">
             <div class="flex justify-between items-center px-2">
                 <h2 class="text-xs font-bold text-purple-400 uppercase tracking-widest italic">Workflow Pipeline</h2>
-                <button onclick="addAgent()" class="bg-purple-600 text-[10px] px-3 py-1 rounded-full font-bold">+ AGENT</button>
+                <button onclick="addAgent()" class="bg-purple-600 text-[10px] px-3 py-1 rounded-full font-bold">+ STEP</button>
             </div>
             <div id="agentList" class="space-y-4"></div>
         </section>
@@ -150,17 +150,14 @@
         async function bootApp() {
             document.getElementById('st').innerText = "Syncing...";
             
-            // Index.htmlと同じ階層からmodels.jsonを取得
             try {
                 const response = await fetch('./models.json');
                 if (response.ok) {
                     availableModels = await response.json();
-                    console.log("Models loaded from local server");
                 } else {
                     throw new Error("Local models.json not found");
                 }
             } catch(e) {
-                console.warn(e.message + ". Trying fallback.");
                 availableModels = [
                     { "value": "gpt-4o-mini", "label": "GPT-4o Mini (Fallback)" },
                     { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" }
@@ -240,23 +237,71 @@
         function renderWorkflow() {
             const container = document.getElementById('agentList');
             if (sortableInstance) sortableInstance.destroy();
-            container.innerHTML = workflow.map((agent, i) => `
+            container.innerHTML = workflow.map((agent, i) => {
+                const isFilter = agent.type === 'filter';
+                return `
                 <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-4">
                     <div class="flex items-center gap-2 mb-3 flex-wrap">
                         <div class="drag-handle p-2 text-slate-700 hover:text-blue-500">☰</div>
-                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-900">
+                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-20 outline-none border-b border-slate-900">
+                        
+                        <select onchange="workflow[${i}].type=this.value;renderWorkflow()" class="bg-slate-800 text-[9px] px-2 py-1 rounded-lg font-bold text-emerald-400">
+                            <option value="agent" ${!isFilter ? 'selected' : ''}>AGENT</option>
+                            <option value="filter" ${isFilter ? 'selected' : ''}>FILTER</option>
+                        </select>
+
                         <select onchange="workflow[${i}].scope=this.value" class="bg-slate-800 text-[9px] px-2 py-1 rounded-lg font-bold text-purple-300">
                             <option value="item" ${agent.scope === 'item' ? 'selected' : ''}>Individual</option>
                             <option value="collection" ${agent.scope === 'collection' ? 'selected' : ''}>Batch</option>
                         </select>
-                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1 text-slate-300">
-                            ${availableModels.map(m => `<option value="${m.value}" ${agent.model === m.value ? 'selected' : ''}>${m.label}</option>`).join('')}
-                        </select>
+
+                        ${!isFilter ? `
+                            <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1 text-slate-300">
+                                ${availableModels.map(m => `<option value="${m.value}" ${agent.model === m.value ? 'selected' : ''}>${m.label}</option>`).join('')}
+                            </select>
+                        ` : `
+                            <div class="flex-1"></div>
+                        `}
+                        
                         <button onclick="workflow.splice(${i},1);renderWorkflow()" class="text-slate-600 text-xl ml-2">✕</button>
                     </div>
-                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-400 outline-none focus:ring-1 ring-blue-500">${agent.prompt}</textarea>
+
+                    ${isFilter ? `
+                        <div class="space-y-2 bg-slate-900/50 p-3 rounded-xl border border-slate-800/50">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="text-[9px] text-slate-500 uppercase font-bold ml-1">Target Key</label>
+                                    <input type="text" placeholder="e.g. priority" value="${agent.target_key || ''}" 
+                                           onchange="workflow[${i}].target_key=this.value" 
+                                           class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-blue-300 outline-none">
+                                </div>
+                                <div>
+                                    <label class="text-[9px] text-slate-500 uppercase font-bold ml-1">Match Type</label>
+                                    <select onchange="workflow[${i}].match_type=this.value" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 outline-none">
+                                        <option value="partial" ${agent.match_type === 'partial' ? 'selected' : ''}>Partial</option>
+                                        <option value="exact" ${agent.match_type === 'exact' ? 'selected' : ''}>Exact</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-[9px] text-slate-500 uppercase font-bold ml-1">Include (comma separated)</label>
+                                <input type="text" placeholder="AI, Tech, Tool" value="${Array.isArray(agent.include) ? agent.include.join(',') : (agent.include || '')}" 
+                                       onchange="workflow[${i}].include=this.value" 
+                                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-emerald-300 outline-none">
+                            </div>
+                            <div>
+                                <label class="text-[9px] text-slate-500 uppercase font-bold ml-1">Exclude (comma separated)</label>
+                                <input type="text" placeholder="PR, AD, Camp" value="${Array.isArray(agent.exclude) ? agent.exclude.join(',') : (agent.exclude || '')}" 
+                                       onchange="workflow[${i}].exclude=this.value" 
+                                       class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-red-300 outline-none">
+                            </div>
+                        </div>
+                    ` : `
+                        <textarea onchange="workflow[${i}].prompt=this.value" placeholder="Enter System Prompt..." class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-400 outline-none focus:ring-1 ring-blue-500">${agent.prompt || ''}</textarea>
+                    `}
                 </div>
-            `).join('');
+            `; }).join('');
+            
             sortableInstance = new Sortable(container, {
                 handle: '.drag-handle', animation: 250,
                 onEnd: (e) => {
@@ -267,7 +312,14 @@
         }
 
         function addAgent() {
-            workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0]?.value || 'gpt-4o-mini', prompt:'', enabled:true, scope: 'item' });
+            workflow.push({ 
+                id: 'step_'+Date.now(), 
+                type: 'agent',
+                model: availableModels[0]?.value || 'gpt-4o-mini', 
+                prompt: '', 
+                enabled: true, 
+                scope: 'item' 
+            });
             renderWorkflow();
         }
 
@@ -275,37 +327,10 @@
             try {
                 document.getElementById('st').innerText = "Syncing...";
                 const s3 = await getS3();
-                const config = { 
-                    rss_feeds: rss_feeds.filter(f => f.url.trim()), 
-                    workflow: workflow, 
-                    settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
-                };
-                await s3.putObject({ Bucket: CONFIG.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();
-                document.getElementById('st').innerText = "Online";
-                alert('Saved to R2');
-            } catch(e) { alert("Save Error"); }
-        }
-
-        async function triggerRun() {
-            if (!confirm('Start Orchestrator?')) return;
-            try {
-                document.getElementById('st').innerText = "Dispatching...";
-                const response = await fetch(`https://api.github.com/repos/${CONFIG.ghRepo}/dispatches`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${CONFIG.ghToken}`,
-                        'Accept': 'application/vnd.github+json',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ event_type: 'manual_trigger' })
-                });
-                if (response.ok) {
-                    alert('GitHub Action triggered');
-                    document.getElementById('st').innerText = "Running";
-                } else { throw new Error('API Error'); }
-            } catch(e) { alert(`Error: ${e.message}`); }
-            finally { setTimeout(() => { document.getElementById('st').innerText = "Online"; }, 3000); }
-        }
-    </script>
-</body>
-</html>
+                
+                // 保存用にデータを整形（include/excludeを配列に変換）
+                const formattedWorkflow = workflow.map(step => {
+                    if (step.type === 'filter') {
+                        return {
+                            ...step,
+                            include: typeof step.include === 'string' ? step.include.split(',').map(s => s.trim()).filter(s => s) : (step.include |

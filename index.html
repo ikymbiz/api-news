@@ -7,16 +7,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="vault.js"></script>
     <style> .safe-bottom { padding-bottom: env(safe-area-inset-bottom); } </style>
 </head>
 <body class="bg-slate-900 text-slate-100 select-none pb-32">
     <div class="max-w-xl mx-auto p-4">
         <header class="flex justify-between items-center mb-6">
             <h1 class="text-xl font-black text-blue-400 italic">ORCHESTRATOR</h1>
-            <div class="flex items-center gap-3">
-                <button onclick="setupCredentials()" class="text-[10px] text-slate-500 border border-slate-700 px-2 py-1 rounded hover:bg-slate-800">KEYS SETUP</button>
-                <span id="st" class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Standby</span>
-            </div>
+            <span id="st" class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Initialising</span>
         </header>
 
         <section class="space-y-4">
@@ -24,114 +22,33 @@
                 <h2 class="text-[10px] font-bold text-purple-400 uppercase tracking-widest italic tracking-tighter">Workflow Pipeline</h2>
                 <button onclick="loadFromR2()" class="text-[10px] text-blue-400 underline italic">R2 Reload</button>
             </div>
-            
-            <textarea id="rssFeeds" class="w-full bg-slate-800 border border-slate-700 p-4 rounded-3xl text-sm h-32 outline-none focus:ring-1 ring-purple-500 shadow-inner" placeholder="RSS URLs..."></textarea>
-            
+            <textarea id="rssFeeds" class="w-full bg-slate-800 border border-slate-700 p-4 rounded-3xl text-sm h-32 outline-none focus:ring-1 ring-purple-500" placeholder="RSS URLs..."></textarea>
             <div id="agentList" class="space-y-4"></div>
-            
-            <button onclick="addAgent()" class="w-full py-5 border-2 border-dashed border-slate-700 rounded-3xl text-slate-500 font-bold text-xs active:bg-slate-800 transition-all">+ エージェント追加</button>
+            <button onclick="addAgent()" class="w-full py-5 border-2 border-dashed border-slate-700 rounded-3xl text-slate-500 font-bold text-xs active:bg-slate-800">+ エージェント追加</button>
         </section>
 
         <div class="fixed bottom-0 left-0 right-0 p-4 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 safe-bottom z-50">
-            <button onclick="saveToR2()" class="w-full bg-gradient-to-r from-red-600 to-rose-600 py-4 rounded-2xl font-black text-lg shadow-2xl active:scale-95 transition-all">🚀 R2へ保存・即時デプロイ</button>
+            <button onclick="saveToR2()" class="w-full bg-gradient-to-r from-red-600 to-rose-600 py-4 rounded-2xl font-black text-lg shadow-2xl active:scale-95">🚀 R2へ保存・即時デプロイ</button>
         </div>
     </div>
 
-    <input id="ghToken" type="hidden">
-    <input id="secKey" type="hidden">
-    <input id="r2Bucket" type="hidden">
-    <input id="geminiKey" type="hidden">
-    <input id="claudeKey" type="hidden">
-    <input id="accId" type="hidden">
-    <input id="keyId" type="hidden">
-
     <script>
-        const REPO_NAME = "owner/repo"; 
-        
         let workflow = [];
-        const DB_NAME = 'OrchestratorDB_v2_7';
-        const STORE_NAME = 'ConfigStore';
 
-        function openDB() {
-            return new Promise((res, rej) => {
-                const req = indexedDB.open(DB_NAME, 1);
-                req.onupgradeneeded = (e) => e.target.result.createObjectStore(STORE_NAME);
-                req.onsuccess = (e) => res(e.target.result);
-                req.onerror = (e) => rej(e.target.error);
-            });
-        }
-
-        async function setupCredentials() {
-            const token = prompt("GitHub PATを入力してください", document.getElementById('ghToken').value || "");
-            const sKey = prompt("R2 Secret Keyを入力してください", document.getElementById('secKey').value || "");
-            const bucket = prompt("R2 Bucket Nameを入力してください", document.getElementById('r2Bucket').value || "");
-            const gKey = prompt("Gemini API Keyを入力してください", document.getElementById('geminiKey').value || "");
-            const cKey = prompt("Claude API Keyを入力してください", document.getElementById('claudeKey').value || "");
-
-            if (token !== null) document.getElementById('ghToken').value = token;
-            if (sKey !== null) document.getElementById('secKey').value = sKey;
-            if (bucket !== null) document.getElementById('r2Bucket').value = bucket;
-            if (gKey !== null) document.getElementById('geminiKey').value = gKey;
-            if (cKey !== null) document.getElementById('claudeKey').value = cKey;
-
-            await saveConfigToDB();
-        }
-
-        async function saveConfigToDB() {
-            const db = await openDB();
-            db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put({
-                ghToken: document.getElementById('ghToken').value,
-                secKey: document.getElementById('secKey').value,
-                r2Bucket: document.getElementById('r2Bucket').value,
-                geminiKey: document.getElementById('geminiKey').value,
-                claudeKey: document.getElementById('claudeKey').value,
-                accId: document.getElementById('accId').value,
-                keyId: document.getElementById('keyId').value
-            }, 'config');
-            fetchFromGitHub();
-        }
-
-        async function loadConfigFromDB() {
-            const db = await openDB();
-            const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get('config');
-            req.onsuccess = () => {
-                const d = req.result;
-                if(d) {
-                    document.getElementById('ghToken').value = d.ghToken || '';
-                    document.getElementById('secKey').value = d.secKey || '';
-                    document.getElementById('r2Bucket').value = d.r2Bucket || '';
-                    document.getElementById('geminiKey').value = d.geminiKey || '';
-                    document.getElementById('claudeKey').value = d.claudeKey || '';
-                    document.getElementById('accId').value = d.accId || '';
-                    document.getElementById('keyId').value = d.keyId || '';
-                    fetchFromGitHub();
-                }
-            };
-        }
-
-        async function fetchFromGitHub() {
-            const token = document.getElementById('ghToken').value;
-            if(!token || !REPO_NAME) return;
-            document.getElementById('st').innerText = "Syncing...";
-            try {
-                const res = await fetch(`https://api.github.com/repos/${REPO_NAME}/actions/variables`, {
-                    headers: { 'Authorization': `token ${token}` }
-                });
-                const data = await res.json();
-                data.variables.forEach(v => {
-                    if (v.name === 'R2_ACCOUNT_ID') document.getElementById('accId').value = v.value;
-                    if (v.name === 'R2_ACCESS_KEY_ID') document.getElementById('keyId').value = v.value;
-                });
-                document.getElementById('st').innerText = "Auth Ready";
-                if(document.getElementById('secKey').value && document.getElementById('r2Bucket').value) loadFromR2();
-            } catch (e) { document.getElementById('st').innerText = "Sync Error"; }
-        }
+        window.onload = async () => {
+            if (window.VAULT) {
+                document.getElementById('st').innerText = "Authenticated";
+                await loadFromR2();
+            } else {
+                document.getElementById('st').innerText = "Vault Missing";
+            }
+        };
 
         async function getS3() {
             return new AWS.S3({
-                endpoint: `https://${document.getElementById('accId').value}.r2.cloudflarestorage.com`,
-                accessKeyId: document.getElementById('keyId').value,
-                secretAccessKey: document.getElementById('secKey').value,
+                endpoint: `https://${window.VAULT.accId}.r2.cloudflarestorage.com`,
+                accessKeyId: window.VAULT.keyId,
+                secretAccessKey: window.VAULT.secKey,
                 signatureVersion: 'v4', region: 'auto'
             });
         }
@@ -139,58 +56,40 @@
         async function loadFromR2() {
             try {
                 const s3 = await getS3();
-                const res = await s3.getObject({ 
-                    Bucket: document.getElementById('r2Bucket').value, 
-                    Key: 'prompts.json' 
-                }).promise();
+                const res = await s3.getObject({ Bucket: window.VAULT.r2Bucket, Key: 'prompts.json' }).promise();
                 const config = JSON.parse(res.Body.toString());
                 document.getElementById('rssFeeds').value = config.rss_feeds.join('\n');
                 workflow = config.workflow;
                 render();
+                document.getElementById('st').innerText = "Connected";
             } catch(e) { document.getElementById('st').innerText = "R2 Error"; }
         }
 
         function render() {
             const container = document.getElementById('agentList');
             container.innerHTML = workflow.map((agent, i) => `
-                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-xl" data-id="${agent.id}">
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-xl">
                     <div class="flex items-center gap-2 mb-3">
-                        <div class="drag-handle p-2 text-slate-700 active:text-blue-500">
+                        <div class="drag-handle p-2 text-slate-700">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
                         </div>
                         <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-900">
                         <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1">
-                            <optgroup label="OpenAI">
-                                <option value="gpt-4o-mini" ${agent.model==='gpt-4o-mini'?'selected':''}>gpt-4o-mini</option>
-                                <option value="o3-mini" ${agent.model==='o3-mini'?'selected':''}>o3-mini</option>
-                                <option value="gpt-4o" ${agent.model==='gpt-4o'?'selected':''}>gpt-4o</option>
-                            </optgroup>
-                            <optgroup label="Anthropic">
-                                <option value="claude-3-5-sonnet-latest" ${agent.model==='claude-3-5-sonnet-latest'?'selected':''}>Claude 3.5 Sonnet</option>
-                                <option value="claude-3-5-haiku-latest" ${agent.model==='claude-3-5-haiku-latest'?'selected':''}>Claude 3.5 Haiku</option>
-                            </optgroup>
-                            <optgroup label="Google Gemini">
-                                <option value="gemini-1.5-flash" ${agent.model==='gemini-1.5-flash'?'selected':''}>Gemini 1.5 Flash</option>
-                                <option value="gemini-1.5-pro" ${agent.model==='gemini-1.5-pro'?'selected':''}>Gemini 1.5 Pro</option>
-                                <option value="gemini-2.0-flash-exp" ${agent.model==='gemini-2.0-flash-exp'?'selected':''}>Gemini 2.0 Flash</option>
-                            </optgroup>
+                            <option value="gpt-4o-mini" ${agent.model==='gpt-4o-mini'?'selected':''}>gpt-4o-mini</option>
+                            <option value="claude-3-5-sonnet-latest" ${agent.model==='claude-3-5-sonnet-latest'?'selected':''}>Claude 3.5 Sonnet</option>
+                            <option value="gemini-2.0-flash-exp" ${agent.model==='gemini-2.0-flash-exp'?'selected':''}>Gemini 2.0 Flash</option>
                         </select>
                         <button onclick="workflow.splice(${i},1);render()" class="text-slate-600 text-xl ml-2">✕</button>
                     </div>
-                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-300 outline-none focus:ring-1 ring-blue-500" placeholder="Agent Prompt...">${agent.prompt}</textarea>
+                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-300 outline-none focus:ring-1 ring-blue-500">${agent.prompt}</textarea>
                 </div>
             `).join('');
 
-            new Sortable(container, {
-                handle: '.drag-handle',
-                animation: 250,
-                delay: 150,
-                onEnd: (e) => {
-                    const item = workflow.splice(e.oldIndex, 1)[0];
-                    workflow.splice(e.newIndex, 0, item);
-                    setTimeout(render, 50);
-                }
-            });
+            new Sortable(container, { handle: '.drag-handle', animation: 250, onEnd: (e) => {
+                const item = workflow.splice(e.oldIndex, 1)[0];
+                workflow.splice(e.newIndex, 0, item);
+                setTimeout(render, 50);
+            }});
         }
 
         function addAgent() {
@@ -206,17 +105,10 @@
                     workflow, 
                     settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
                 };
-                await s3.putObject({ 
-                    Bucket: document.getElementById('r2Bucket').value, 
-                    Key: 'prompts.json', 
-                    Body: JSON.stringify(config,null,2), 
-                    ContentType: 'application/json' 
-                }).promise();
-                alert('Success: マルチAI設定がデプロイされました！');
+                await s3.putObject({ Bucket: window.VAULT.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();
+                alert('Success: R2 updated');
             } catch(e) { alert("Save Error"); }
         }
-
-        window.onload = loadConfigFromDB;
     </script>
 </body>
 </html>

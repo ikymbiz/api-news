@@ -10,14 +10,22 @@ const { cosineSimilarity } = require('./lib/utils');
 
 async function run() {
   console.log("=== START: Multi-Provider Orchestrator ===");
-  
+
+  // --- デバッグ用：APIキーがプログラムまで届いているかの確認 ---
+  console.log("--- DEBUG: API KEYS CHECK ---");
+  console.log("Gemini Key Length: ", process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : "UNDEFINED");
+  console.log("OpenAI Key exists: ", !!process.env.OPENAI_API_KEY);
+  console.log("Anthropic Key exists: ", !!process.env.ANTHROPIC_API_KEY);
+  console.log("-----------------------------");
+
   // --- ログ管理用変数の初期化 ---
   const errorLogs = [];
   const processLogs = []; // 全件の推移を記録するログ
 
   const logError = (context, message, details = null) => {
     errorLogs.push({ time: new Date().toLocaleString('ja-JP'), context, message, details });
-    console.error(`[${context}] ${message}`);
+    // 修正: 隠れていたエラー詳細(details)をGitHub Actionsの画面上でも表示するようにしました
+    console.error(`[${context}] ${message} ${details ? '| Details: ' + details : ''}`);
   };
 
   const logProcess = (title, url, status, detail) => {
@@ -39,7 +47,8 @@ async function run() {
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const googleAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  // GoogleGenerativeAI の初期化 (ここでキーが空だと即エラーになるのを防ぎます)
+  const googleAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
   // AIへの問い合わせ共通関数
   const askAI = async (model, systemPrompt, userContent) => {
@@ -235,13 +244,10 @@ async function run() {
 
 async function saveActivityLogs(errors, processes) {
   try {
-    // エラーログの保存
     const oldErrors = JSON.parse(await r2.download('error_log.json') || "[]");
     await r2.upload('error_log.json', JSON.stringify([...errors, ...oldErrors].slice(0, 100), null, 2), 'application/json');
 
-    // 全件プロセスの保存（これが「全件確認」用）
     const oldProcesses = JSON.parse(await r2.download('process_log.json') || "[]");
-    // 直近200件程度の履歴を保持
     await r2.upload('process_log.json', JSON.stringify([...processes, ...oldProcesses].slice(0, 200), null, 2), 'application/json');
   } catch (e) { console.error("Log saving failed:", e); }
 }

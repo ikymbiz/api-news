@@ -10,15 +10,18 @@ async function run() {
   console.log("=== START: Orchestrator Loop ===");
   const errorLogs = [];
   const logError = (context, message, details = null) => {
-    errorLogs.push({ time: new Date().toLocaleString('ja-JP'), context, message, details });
+    errorLogs.push({ 
+      time: new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }), 
+      context, message, details 
+    });
     console.error(`[${context}] ${message}`);
   };
 
   const configStr = await r2.download('prompts.json');
   if (!configStr) {
-    logError("Config", "prompts.json is missing on R2.");
+    logError("Config", "prompts.json not found on R2.");
     await saveLogs(errorLogs);
-    throw new Error("Critical: No prompts.json found.");
+    return;
   }
   
   const config = JSON.parse(configStr);
@@ -42,7 +45,7 @@ async function run() {
   const pending = allItems.filter(i => !db.some(d => d.link === i.link));
 
   if (pending.length === 0) {
-    console.log("=== No New Articles ===");
+    console.log("No new articles.");
     await saveLogs(errorLogs);
     return;
   }
@@ -52,7 +55,7 @@ async function run() {
   if (filterStep) {
     try {
       const res = await openai.chat.completions.create({
-        model: filterStep.model,
+        model: filterStep.model, // フィルタ用モデル
         messages: [
           { role: "system", content: filterStep.prompt + " Output JSON: {items:[{url,score}]}" },
           { role: "user", content: JSON.stringify(pending.map(p => ({ t: p.title, u: p.link }))) }
@@ -67,8 +70,6 @@ async function run() {
   const apiOutput = [];
   for (const article of targets) {
     try {
-      console.log(`\n>> Analyzing: ${article.title}`);
-      
       let bodyText = "";
       try {
         const res = await fetch(article.link, { 
@@ -78,22 +79,21 @@ async function run() {
         const html = await res.text();
         const doc = new JSDOM(html, { url: article.link });
         bodyText = (new Readability(doc.window.document)).parse()?.textContent.trim().substring(0, 10000) || "";
-      } catch (e) {
-        logError("Scraping", article.title, "Fallback to snippet.");
-      }
+      } catch (e) { logError("Scraping", article.title, "Using Snippet."); }
 
-      // 修正：本文取得に失敗してもSKIPせず続行
-      const finalContent = bodyText || article.contentSnippet || article.content || "No content available.";
-
+      const finalContent = bodyText || article.contentSnippet || article.content || "N/A";
       const emb = await openai.embeddings.create({ model: settings.embedding_model, input: article.title });
       const vec = emb.data[0].embedding;
       if (vectorDb.some(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85))) continue;
 
       let currentContext = `Title: ${article.title}\nContent: ${finalContent}`;
+      
+      // 各エージェント（ワークフローのステップ）を個別のモデル設定で実行
       for (const step of config.workflow) {
         if (!step.enabled || step.id === 'filter') continue;
+        console.log(`   Step: [${step.id}] Model: ${step.model}`);
         const aiRes = await openai.chat.completions.create({
-          model: step.model,
+          model: step.model, // ここでエージェントごとのモデル設定を使用
           messages: [{ role: "system", content: step.prompt }, { role: "user", content: currentContext }]
         });
         currentContext = aiRes.choices[0].message.content;
@@ -111,14 +111,13 @@ async function run() {
     await r2.upload('vectors.json', JSON.stringify(vectorDb.slice(-500)), 'application/json');
   }
   await saveLogs(errorLogs);
-  console.log("=== SUCCESS ===");
 }
 
 async function saveLogs(logs) {
   try {
     const old = JSON.parse(await r2.download('error_log.json') || "[]");
     await r2.upload('error_log.json', JSON.stringify([...logs, ...old].slice(0, 100), null, 2), 'application/json');
-  } catch (e) { console.error("Log failed", e); }
+  } catch (e) { console.error("Log upload failed", e); }
 }
 
 run().catch(console.error);

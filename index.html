@@ -2,45 +2,89 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>AI Orchestrator Admin</title>
+    <title>Intelligence Orchestrator v2.5</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
 </head>
-<body class="bg-gray-900 text-gray-100 p-8">
+<body class="bg-slate-900 text-slate-100 p-6">
     <div class="max-w-5xl mx-auto">
-        <h1 class="text-3xl font-bold mb-8 text-blue-400">Intelligence Orchestrator UI</h1>
+        <header class="flex justify-between items-center mb-8 border-b border-slate-700 pb-4">
+            <h1 class="text-2xl font-black text-blue-400 tracking-tighter">AI ORCHESTRATOR <span class="text-xs font-normal text-slate-500">v2.5.0</span></h1>
+            <div id="syncStatus" class="text-xs bg-slate-800 px-3 py-1 rounded-full text-slate-400 italic">Initializing...</div>
+        </header>
 
-        <div class="bg-gray-800 p-6 rounded-lg mb-8 border border-gray-700">
-            <h2 class="text-xl font-bold mb-4">🔑 認証・環境設定</h2>
-            <div class="grid grid-cols-2 gap-4">
-                <input id="ghToken" type="password" placeholder="GitHub Personal Access Token" class="bg-gray-700 p-2 rounded">
-                <input id="ghRepo" type="text" placeholder="owner/repo" class="bg-gray-700 p-2 rounded">
-                <button onclick="fetchFromGitHub()" class="bg-gray-600 hover:bg-gray-500 p-2 rounded col-span-2">🐙 GitHub VariablesからR2設定を取得</button>
-                <input id="accId" type="text" placeholder="R2 Account ID" class="bg-gray-700 p-2 rounded">
-                <input id="keyId" type="text" placeholder="Access Key ID" class="bg-gray-700 p-2 rounded">
-                <input id="secKey" type="password" placeholder="Secret Access Key" class="bg-gray-700 p-2 rounded col-span-2">
+        <section class="bg-slate-800 rounded-xl p-6 shadow-2xl mb-6 border border-slate-700">
+            <h2 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span> Connectivity & Auth
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="space-y-2">
+                    <label class="text-xs text-slate-500 ml-1">GitHub PAT (Repository scope)</label>
+                    <input id="ghToken" type="password" placeholder="ghp_****************" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-sm focus:border-blue-500 outline-none transition-all">
+                </div>
+                <div class="space-y-2">
+                    <label class="text-xs text-slate-500 ml-1">GitHub Repo Path</label>
+                    <input id="ghRepo" type="text" placeholder="user/repository" class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-sm focus:border-blue-500 outline-none">
+                </div>
             </div>
-            <div class="mt-4 flex gap-2">
-                <button onclick="saveKeys()" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded">ローカル保存</button>
-                <button onclick="loadFromR2()" class="bg-green-600 hover:bg-green-500 px-4 py-2 rounded">📥 R2から読込</button>
+
+            <div class="mt-6 p-4 bg-slate-950/50 rounded-lg border border-slate-800 flex flex-wrap gap-6 items-center">
+                <div class="flex-1">
+                    <p class="text-[10px] text-slate-500 uppercase font-bold">Fetched R2 Account ID</p>
+                    <p id="displayAccId" class="font-mono text-sm text-blue-300">---</p>
+                </div>
+                <div class="flex-1">
+                    <p class="text-[10px] text-slate-500 uppercase font-bold">Fetched R2 Key ID</p>
+                    <p id="displayKeyId" class="font-mono text-sm text-green-400">---</p>
+                </div>
+                <button onclick="fetchFromGitHub()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded text-xs font-bold transition-colors">🐙 Force Sync GitHub</button>
             </div>
-        </div>
 
-        <div class="bg-red-900/20 border border-red-700 p-6 rounded-lg mb-8">
-            <h2 class="text-xl font-bold mb-4 text-red-400">⚠️ 最近の失敗ログ</h2>
-            <button onclick="loadLogs()" class="text-xs bg-red-800 px-2 py-1 rounded mb-4">ログを更新</button>
-            <div id="logContent" class="text-xs font-mono max-h-40 overflow-y-auto space-y-1"></div>
-        </div>
+            <div class="mt-4">
+                <label class="text-xs text-slate-500 ml-1">R2 Secret Access Key (Session usage only)</label>
+                <input id="secKey" type="password" placeholder="R2 Secret Key..." class="w-full bg-slate-900 border border-slate-700 p-2 rounded text-sm mt-1">
+            </div>
 
-        <div class="bg-gray-800 p-6 rounded-lg mb-8">
-            <h2 class="text-xl font-bold mb-4">⚙️ プロンプト・ワークフロー</h2>
-            <textarea id="rssFeeds" class="w-full bg-gray-700 p-2 rounded h-20 mb-4" placeholder="RSS URL (1行に1つ)"></textarea>
-            <div id="agentList" class="space-y-4"></div>
-            <button onclick="addAgent()" class="mt-4 bg-purple-600 px-4 py-2 rounded">+ 追加</button>
-        </div>
+            <div class="mt-6 flex gap-3">
+                <button onclick="saveKeys()" class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg text-xs font-bold shadow-lg">Save Auth to Browser</button>
+                <button onclick="loadFromR2()" class="bg-emerald-600 hover:bg-emerald-500 px-6 py-2 rounded-lg text-xs font-bold shadow-lg">📥 Load Config from R2</button>
+            </div>
+        </section>
 
-        <button onclick="saveToR2()" class="w-full bg-red-600 hover:bg-red-500 py-4 rounded-xl font-bold text-2xl">🚀 R2へ全設定を保存 (即時反映)</button>
+        <section class="bg-slate-800 rounded-xl p-6 border border-red-900/30 mb-6">
+            <h2 class="text-sm font-bold text-red-400 uppercase tracking-widest mb-4">⚠️ Failure Monitor (R2 Error Logs)</h2>
+            <div id="logContent" class="bg-slate-950 p-4 rounded-lg text-[11px] font-mono h-32 overflow-y-auto space-y-2 border border-slate-900">
+                <div class="text-slate-600 italic">Select "Load Config from R2" to fetch logs...</div>
+            </div>
+        </section>
+
+        <section class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-20 shadow-2xl">
+            <h2 class="text-sm font-bold text-purple-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <span class="w-2 h-2 bg-purple-500 rounded-full"></span> Pipeline Orchestration
+            </h2>
+            
+            <div class="mb-6">
+                <label class="text-xs text-slate-500 font-bold mb-2 block">RSS Targets (Line-separated URLs)</label>
+                <textarea id="rssFeeds" class="w-full bg-slate-950 border border-slate-700 p-3 rounded-lg text-sm h-28 focus:border-purple-500 outline-none" placeholder="https://example.com/rss"></textarea>
+            </div>
+
+            <div id="agentList" class="space-y-4">
+                </div>
+
+            <button onclick="addAgent()" class="mt-6 w-full border-2 border-dashed border-slate-700 hover:border-purple-500 hover:bg-purple-500/10 py-3 rounded-xl text-slate-500 hover:text-purple-400 font-bold transition-all text-sm">
+                + Append Intelligence Agent
+            </button>
+        </section>
+
+        <div class="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-md p-4 border-t border-slate-800 flex justify-center z-50">
+            <button onclick="saveToR2()" class="max-w-2xl w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 py-4 rounded-2xl font-black text-xl shadow-2xl transform active:scale-95 transition-all">
+                🚀 Deploy Workflow to R2
+            </button>
+        </div>
     </div>
+
+    <input id="accId" type="hidden">
+    <input id="keyId" type="hidden">
 
     <script>
         let workflow = [];
@@ -48,32 +92,50 @@
         async function fetchFromGitHub() {
             const token = document.getElementById('ghToken').value;
             const repo = document.getElementById('ghRepo').value;
+            if(!token || !repo) return;
+            
             try {
                 const res = await fetch(`https://api.github.com/repos/${repo}/actions/variables`, {
                     headers: { 'Authorization': `token ${token}` }
                 });
+                if(!res.ok) throw new Error("GitHub Auth Failed");
                 const data = await res.json();
+                
                 data.variables.forEach(v => {
-                    if (v.name === 'R2_ACCOUNT_ID') document.getElementById('accId').value = v.value;
-                    if (v.name === 'R2_ACCESS_KEY_ID') document.getElementById('keyId').value = v.value;
+                    if (v.name === 'R2_ACCOUNT_ID') {
+                        document.getElementById('accId').value = v.value;
+                        document.getElementById('displayAccId').innerText = v.value;
+                    }
+                    if (v.name === 'R2_ACCESS_KEY_ID') {
+                        document.getElementById('keyId').value = v.value;
+                        document.getElementById('displayKeyId').innerText = v.value;
+                    }
                 });
-                alert('取得完了');
-            } catch (e) { alert('GitHub連携失敗: ' + e.message); }
+                document.getElementById('syncStatus').innerText = "GitHub Sync: OK";
+            } catch (e) { 
+                document.getElementById('syncStatus').innerText = "GitHub Sync: ERROR";
+                console.error(e);
+            }
         }
 
         async function loadLogs() {
-            const s3 = await getS3();
             try {
+                const s3 = await getS3();
                 const res = await s3.getObject({ Bucket: 'rss-reports', Key: 'error_log.json' }).promise();
                 const logs = JSON.parse(res.Body.toString());
                 document.getElementById('logContent').innerHTML = logs.map(l => 
-                    `<div>[${l.time.split('T')[1].split('.')[0]}] <b>${l.context}</b>: ${l.message}</div>`
+                    `<div class="border-b border-slate-800 pb-1">
+                        <span class="text-slate-500">[${l.time}]</span> 
+                        <span class="text-red-400 font-bold">${l.context}</span>: 
+                        <span class="text-slate-300">${l.message}</span>
+                    </div>`
                 ).join('');
-            } catch (e) { document.getElementById('logContent').innerText = "ログなし"; }
+            } catch (e) { 
+                document.getElementById('logContent').innerHTML = `<div class="text-slate-600">No logs found on R2.</div>`; 
+            }
         }
 
-        // --- 以下、既存ロジックを一切削らずに統合 ---
-        function addAgent(data = { id: 'agent', model: 'gpt-4o-mini', prompt: '', enabled: true }) {
+        function addAgent(data = { id: 'agent_' + (workflow.length + 1), model: 'gpt-4o-mini', prompt: '', enabled: true }) {
             workflow.push(data);
             render();
         }
@@ -81,14 +143,19 @@
         function render() {
             const container = document.getElementById('agentList');
             container.innerHTML = workflow.map((agent, i) => `
-                <div class="bg-gray-700 p-4 rounded relative">
-                    <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-bold">
-                    <select onchange="workflow[${i}].model=this.value" class="bg-gray-600 ml-4">
-                        <option value="gpt-4o-mini" ${agent.model === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini</option>
-                        <option value="o3-mini" ${agent.model === 'o3-mini' ? 'selected' : ''}>o3-mini</option>
-                    </select>
-                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-gray-800 mt-2 p-2 rounded text-sm">${agent.prompt}</textarea>
-                    <button onclick="workflow.splice(${i},1);render()" class="absolute top-2 right-2 text-red-400">✕</button>
+                <div class="bg-slate-950 p-5 rounded-xl border border-slate-800 relative group transition-all hover:border-purple-900/50">
+                    <div class="flex items-center gap-4 mb-3">
+                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-purple-400 w-40 outline-none border-b border-transparent focus:border-purple-500">
+                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded font-bold uppercase tracking-wider">
+                            <option value="gpt-4o-mini" ${agent.model === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini</option>
+                            <option value="o3-mini" ${agent.model === 'o3-mini' ? 'selected' : ''}>o3-mini</option>
+                        </select>
+                        <div class="ml-auto flex items-center gap-2">
+                             <input type="checkbox" ${agent.enabled ? 'checked' : ''} onchange="workflow[${i}].enabled=this.checked" class="w-4 h-4 rounded accent-purple-500">
+                             <button onclick="workflow.splice(${i},1);render()" class="text-slate-600 hover:text-red-500 transition-colors">✕</button>
+                        </div>
+                    </div>
+                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-lg text-xs h-32 text-slate-300 focus:ring-1 ring-purple-500 outline-none" placeholder="System Prompt...">${agent.prompt}</textarea>
                 </div>
             `).join('');
         }
@@ -103,45 +170,64 @@
         }
 
         async function loadFromR2() {
-            const s3 = await getS3();
-            const res = await s3.getObject({ Bucket: 'rss-reports', Key: 'prompts.json' }).promise();
-            const config = JSON.parse(res.Body.toString());
-            document.getElementById('rssFeeds').value = config.rss_feeds.join('\n');
-            workflow = config.workflow;
-            render();
-            loadLogs();
+            const btn = event.target;
+            btn.innerText = "Loading...";
+            try {
+                const s3 = await getS3();
+                const res = await s3.getObject({ Bucket: 'rss-reports', Key: 'prompts.json' }).promise();
+                const config = JSON.parse(res.Body.toString());
+                document.getElementById('rssFeeds').value = config.rss_feeds.join('\n');
+                workflow = config.workflow;
+                render();
+                await loadLogs();
+                btn.innerText = "📥 Sync Success";
+            } catch(e) { 
+                alert("R2 Read Error: Check Secret Key & CORS settings.");
+                btn.innerText = "📥 Sync Failed";
+            }
         }
 
         async function saveToR2() {
-            const s3 = await getS3();
-            const config = {
-                rss_feeds: document.getElementById('rssFeeds').value.split('\n').filter(l => l.trim()),
-                workflow: workflow,
-                settings: { fetch_days: 3, score_threshold: 7, embedding_model: "text-embedding-3-small", similarity_threshold: 0.85 }
-            };
-            await s3.putObject({
-                Bucket: 'rss-reports', Key: 'prompts.json',
-                Body: JSON.stringify(config, null, 2), ContentType: 'application/json'
-            }).promise();
-            alert('R2保存完了');
+            try {
+                const s3 = await getS3();
+                const config = {
+                    rss_feeds: document.getElementById('rssFeeds').value.split('\n').filter(l => l.trim()),
+                    workflow: workflow,
+                    settings: { fetch_days: 3, score_threshold: 7, embedding_model: "text-embedding-3-small", similarity_threshold: 0.85 }
+                };
+                await s3.putObject({
+                    Bucket: 'rss-reports', Key: 'prompts.json',
+                    Body: JSON.stringify(config, null, 2), ContentType: 'application/json'
+                }).promise();
+                alert('Success: Configuration updated on R2. GitHub Action will use this on next run.');
+            } catch(e) { alert("Save Error: " + e.message); }
         }
 
         function saveKeys() {
-            localStorage.setItem('orch_creds', JSON.stringify({
-                accId: document.getElementById('accId').value,
-                keyId: document.getElementById('keyId').value,
-                secKey: document.getElementById('secKey').value,
-                ghRepo: document.getElementById('ghRepo').value
+            localStorage.setItem('orch_creds_v2_5', JSON.stringify({
+                ghRepo: document.getElementById('ghRepo').value,
+                ghToken: document.getElementById('ghToken').value,
+                secKey: document.getElementById('secKey').value
             }));
+            alert('Credentials cached in local storage.');
         }
 
-        window.onload = () => {
-            const saved = JSON.parse(localStorage.getItem('orch_creds') || '{}');
-            if (saved.accId) {
-                document.getElementById('accId').value = saved.accId;
-                document.getElementById('keyId').value = saved.keyId;
-                document.getElementById('secKey').value = saved.secKey;
+        window.onload = async () => {
+            const saved = JSON.parse(localStorage.getItem('orch_creds_v2_5') || '{}');
+            if (saved.ghToken) {
+                document.getElementById('ghToken').value = saved.ghToken;
                 document.getElementById('ghRepo').value = saved.ghRepo;
+                document.getElementById('secKey').value = saved.secKey || '';
+                
+                // ページ読み込み時にGitHubからIDを自動取得
+                await fetchFromGitHub();
+                
+                // R2アクセス可能ならコンフィグも自動取得
+                if(document.getElementById('accId').value && saved.secKey) {
+                    loadFromR2().catch(e => console.log("Silent skip R2 load"));
+                }
+            } else {
+                document.getElementById('syncStatus').innerText = "Standby: Auth Required";
             }
         };
     </script>

@@ -115,11 +115,7 @@
         let CONFIG = {};
         let rss_feeds = [];
         let workflow = [];
-        let availableModels = [
-            { "value": "gpt-4o-mini", "label": "GPT-4o Mini" },
-            { "value": "o3-mini", "label": "o3-mini" },
-            { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" }
-        ];
+        let availableModels = [];
         let sortableInstance = null;
 
         window.onload = () => {
@@ -151,6 +147,21 @@
 
         async function bootApp() {
             document.getElementById('st').innerText = "Syncing...";
+            const s3 = await getS3();
+            
+            // models.json を R2 から取得
+            try {
+                const modelRes = await s3.getObject({ Bucket: CONFIG.r2Bucket, Key: 'models.json' }).promise();
+                availableModels = JSON.parse(modelRes.Body.toString());
+            } catch(e) {
+                console.warn("models.json not found, using defaults.");
+                availableModels = [
+                    { "value": "gpt-4o-mini", "label": "GPT-4o Mini" },
+                    { "value": "o3-mini", "label": "o3-mini" },
+                    { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" }
+                ];
+            }
+
             await loadFromR2();
             await loadOutput();
         }
@@ -251,7 +262,7 @@
         }
 
         function addAgent() {
-            workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0].value, prompt:'', enabled:true, scope: 'item' });
+            workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0]?.value || 'gpt-4o-mini', prompt:'', enabled:true, scope: 'item' });
             renderWorkflow();
         }
 

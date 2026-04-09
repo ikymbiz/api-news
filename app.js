@@ -9,15 +9,13 @@ const { cosineSimilarity } = require('./lib/utils');
 async function run() {
   console.log("=== START: Intelligence Cycle ===");
   
-  // 1. 設定の読み込み
   const config = JSON.parse(await r2.download('prompts.json'));
-  if (!config) throw new Error("!! CRITICAL ERROR: prompts.json が R2 に見つかりません。");
+  if (!config) throw new Error("!! ERROR: prompts.json が見つかりません。");
   
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const parser = new Parser();
   const settings = config.settings;
 
-  // 2. RSSフィードの取得
   console.log("--- 1. RSSフィードを取得中 ---");
   let allItems = [];
   const cutoff = new Date();
@@ -28,25 +26,19 @@ async function run() {
       const feed = await parser.parseURL(url);
       const filtered = feed.items.filter(i => new Date(i.pubDate) > cutoff);
       allItems.push(...filtered);
-      console.log(`取得成功 (${filtered.length}件): ${url}`);
     } catch (e) {
-      console.error(`取得失敗: ${url} - ${e.message}`);
+      console.error(`取得失敗: ${url}`);
     }
   }
 
-  // 3. 履歴の読み込みと重複排除
   const db = JSON.parse(await r2.download('articles_db.json') || "[]");
   const vectorDb = JSON.parse(await r2.download('vectors.json') || "[]");
   const pending = allItems.filter(i => !db.some(d => d.link === i.link));
 
-  console.log(`未処理の記事: ${pending.length} 件`);
-  if (pending.length === 0) {
-    console.log("=== FINISH: 新着記事なし ===");
-    return;
-  }
+  if (pending.length === 0) return console.log("=== FINISH: 新着なし ===");
 
-  // 4. フィルタリングとスコアリングのログ出力
-  console.log("--- 2. フィルタリング（AIスコアリング）を実行中 ---");
+  // --- フィルタリング ---
+  console.log("--- 2. スコアリング実行中 ---");
   const filterStep = config.workflow.find(s => s.id === 'filter' && s.enabled);
   let targets = pending;
 
@@ -54,96 +46,89 @@ async function run() {
     const res = await openai.chat.completions.create({
       model: filterStep.model,
       messages: [
-        { role: "system", content: filterStep.prompt + " Output MUST be valid JSON format." },
+        { role: "system", content: filterStep.prompt + " Output MUST be JSON." },
         { role: "user", content: JSON.stringify(pending.map(p => ({ t: p.title, u: p.link }))) }
       ],
       response_format: { type: "json_object" }
     });
-
-    const parsedRes = JSON.parse(res.choices[0].message.content);
-    const scores = parsedRes.items || [];
-
-    console.log("--- [スコアリング結果の詳細] ---");
+    const scores = JSON.parse(res.choices[0].message.content).items || [];
+    targets = pending.filter(p => (scores.find(s => s.url === p.link)?.score || 0) >= settings.score_threshold);
+    
+    // ログ出力
     scores.forEach(s => {
-      const article = pending.find(p => p.link === s.url);
-      const title = article ? article.title : "不明なタイトル";
-      const isPassed = s.score >= settings.score_threshold;
-      const statusIcon = isPassed ? "✅ [採用]" : "❌ [却下]";
-      console.log(`${statusIcon} スコア: ${s.score}点 / 基準: ${settings.score_threshold}点 | ${title}`);
-    });
-    console.log("-------------------------------");
-
-    targets = pending.filter(p => {
-      const s = scores.find(scoreObj => scoreObj.url === p.link);
-      return (s?.score || 0) >= settings.score_threshold;
+      const p = pending.find(item => item.link === s.url);
+      if (p) console.log(`[${s.score}点] ${s.score >= settings.score_threshold ? "✅" : "❌"} ${p.title}`);
     });
   }
 
-  console.log(`分析対象として確定した記事: ${targets.length} 件`);
-
-  // 5. 本文抽出と詳細分析
+  // --- 保存処理 ---
   const apiOutput = [];
   for (const article of targets) {
     try {
-      console.log(`\n>> 分析開始: ${article.title}`);
+      console.log(`\n>> 処理中: ${article.title}`);
       
-      const page = await fetch(article.link, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      const html = await page.text();
-      const doc = new JSDOM(html, { url: article.link });
-      const reader = new Readability(doc.window.document);
-      const articleData = reader.parse();
-      const fullText = articleData?.textContent.trim().substring(0, 8000);
-      
-      if (!fullText) {
-        console.log("   !! SKIP: 本文の抽出に失敗しました。");
-        continue;
+      let fullText = "";
+      try {
+        const page = await fetch(article.link, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
+        const html = await page.text();
+        const doc = new JSDOM(html, { url: article.link });
+        fullText = (new Readability(doc.window.document)).parse()?.textContent.trim().substring(0, 8000) || "";
+      } catch (e) {
+        console.log("   ⚠️ 本文取得エラー（スキップせずタイトルのみで続行）");
       }
 
-      // 重複検知（ベクトル類似度）
+      // 重複チェック
       const emb = await openai.embeddings.create({ model: settings.embedding_model, input: article.title });
       const vec = emb.data[0].embedding;
-      const isDuplicate = vectorDb.some(v => cosineSimilarity(vec, v.vec) > settings.similarity_threshold);
-      
-      if (isDuplicate) {
-        console.log("   !! SKIP: すでに類似した内容の記事を処理済みです。");
+      if (vectorDb.some(v => cosineSimilarity(vec, v.vec) > settings.similarity_threshold)) {
+        console.log("   !! SKIP: 重複判定");
         continue;
       }
 
-      // ワークフロー（分析エージェント）の実行
-      let currentContent = `Title: ${article.title}\nContent: ${fullText}`;
-      for (const step of config.workflow) {
-        if (!step.enabled || step.id === 'filter') continue;
-        console.log(`   エージェント [${step.id}] が思考中...`);
-        const aiRes = await openai.chat.completions.create({
-          model: step.model,
-          messages: [
-            { role: "system", content: step.prompt },
-            { role: "user", content: currentContent }
-          ]
-        });
-        currentContent = aiRes.choices[0].message.content;
+      // 分析エージェントの実行
+      let analysisResult = "";
+      if (fullText) {
+        let currentContent = `Title: ${article.title}\nContent: ${fullText}`;
+        for (const step of config.workflow) {
+          if (!step.enabled || step.id === 'filter') continue;
+          const aiRes = await openai.chat.completions.create({
+            model: step.model,
+            messages: [{ role: "system", content: step.prompt }, { role: "user", content: currentContent }]
+          });
+          currentContent = aiRes.choices[0].message.content;
+        }
+        analysisResult = currentContent;
+      } else {
+        // 本文が取れなかった時のフォールバック
+        analysisResult = "※本文の抽出に失敗しました。リンク先を直接確認してください。";
       }
 
-      apiOutput.push({ title: article.title, link: article.link, analysis: currentContent });
+      apiOutput.push({
+        title: article.title,
+        link: article.link,
+        date: article.pubDate,
+        analysis: analysisResult
+      });
+      
       db.push({ link: article.link, date: new Date().toISOString() });
       vectorDb.push({ link: article.link, vec });
-      console.log("<< 分析完了");
+      console.log("<< 完了");
 
     } catch (e) {
-      console.error(`!! ERROR: ${article.title} の処理中に例外が発生: ${e.message}`);
+      console.error(`!! ERROR: ${article.title} - ${e.message}`);
     }
   }
 
-  // 6. R2への保存
+  // R2へ書き込み（常に実行）
   if (apiOutput.length > 0) {
-    console.log("\n--- 3. 分析結果をR2に書き込み中 ---");
+    console.log("\n--- 3. R2に保存中 ---");
     await r2.upload('api_output.json', JSON.stringify(apiOutput), 'application/json');
     await r2.upload('articles_db.json', JSON.stringify(db.slice(-1000)), 'application/json');
     await r2.upload('vectors.json', JSON.stringify(vectorDb.slice(-500)), 'application/json');
-    console.log("=== ALL SUCCESS: 全データが正常に保存されました ===");
+    console.log("=== ALL SUCCESS ===");
   } else {
-    console.log("\n=== FINISH: 保存すべき新しい分析結果はありませんでした ===");
+    console.log("=== FINISH: 保存対象なし ===");
   }
 }
 
-run().catch(e => console.error("!! CRITICAL ERROR !!", e));
+run().catch(e => console.error("!! CRITICAL !!", e));

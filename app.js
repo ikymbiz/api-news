@@ -28,14 +28,15 @@ async function run() {
   const askAI = async (model, systemPrompt, userContent) => {
     const m = model.toLowerCase();
     
-    // OpenAI系 (GPTシリーズ, o1, o3)
+    // --- 変更箇所: モデル名の判定ロジックを柔軟に ---
+    // OpenAI系 (gpt-5, o1, o3 などに対応)
     if (m.includes('gpt') || m.startsWith('o1') || m.startsWith('o3')) {
       const res = await openai.chat.completions.create({
         model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }]
       });
       return res.choices[0].message.content;
     } 
-    // Anthropic系 (Claudeシリーズ)
+    // Anthropic系 (claude-4 などに対応)
     else if (m.includes('claude')) {
       const res = await anthropic.messages.create({
         model, max_tokens: 4096, system: systemPrompt,
@@ -43,7 +44,7 @@ async function run() {
       });
       return res.content[0].text;
     } 
-    // Google系 (Geminiシリーズ)
+    // Google系 (gemini-3 などに対応)
     else if (m.includes('gemini')) {
       const genModel = googleAI.getGenerativeModel({ model });
       const res = await genModel.generateContent({
@@ -58,6 +59,7 @@ async function run() {
   const parser = new Parser();
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - (settings.fetch_days || 3));
+  
   for (const url of config.rss_feeds) {
     try {
       const feed = await parser.parseURL(url.url || url);

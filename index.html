@@ -146,7 +146,14 @@
                 renderWorkflow();
                 switchTab('rss');
                 document.getElementById('st').innerText = "Online";
-            } catch(e) { document.getElementById('st').innerText = "R2 Error"; }
+            } catch(e) { 
+                // [診断用] 読み込みエラーの内容を表示
+                console.error(e);
+                if (e.name !== 'NoSuchKey') { // ファイルがないだけならスルー
+                    alert("Load Error: " + e.message + "\n(Check accId or CORS)");
+                }
+                document.getElementById('st').innerText = "R2 Error"; 
+            }
         }
 
         async function loadOutput() {
@@ -232,7 +239,7 @@
                 document.getElementById('st').innerText = "Online";
                 alert('Success: Configuration Deployed');
             } catch(e) { 
-                alert("Error: " + e.message);
+                alert("Save Error: " + e.message);
                 document.getElementById('st').innerText = "Error"; 
             }
         }

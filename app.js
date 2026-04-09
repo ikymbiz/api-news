@@ -28,7 +28,7 @@ async function run() {
   const askAI = async (model, systemPrompt, userContent) => {
     const m = model.toLowerCase();
     
-    // モデル名の判定ロジックを柔軟にし、新しい命名規則（gpt-5, o3, claude-4, gemini-3）に対応
+    // モデル名に含まれるキーワードでプロバイダーを自動判別
     if (m.includes('gpt') || m.startsWith('o1') || m.startsWith('o3')) {
       const res = await openai.chat.completions.create({
         model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }]

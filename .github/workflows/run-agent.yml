@@ -1,15 +1,14 @@
 name: Intelligence Cycle
 on:
   schedule:
-    - cron: '0 */12 * * *' # 6時間ごとに自動実行
-  workflow_dispatch:      # 手動実行用
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
   repository_dispatch:
     types: [manual_trigger]
 
 jobs:
   run-agent:
     runs-on: ubuntu-latest
-    # environment: ... は書かない（Repository Secretsを使用するため）
     steps:
       - uses: actions/checkout@v4
       
@@ -17,7 +16,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm' # キャッシュを有効にすると次回から速くなります
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm install
@@ -25,14 +24,10 @@ jobs:
       - name: Run Orchestrator
         run: node app.js
         env:
-          # AI API Keys
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          
-          # Cloudflare R2 Settings
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          # バケット名も確実にSecretまたは変数から渡す
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME || 'rss-reports' }}

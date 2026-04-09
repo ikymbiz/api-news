@@ -1,14 +1,12 @@
 {
-  "name": "ai-intelligence-pro-v2",
-  "version": "2.0.0",
-  "description": "Professional AI Agent Pipeline",
+  "name": "ai-intelligence-orchestrator",
+  "version": "2.5.0",
   "main": "app.js",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.712.0",
     "@mozilla/readability": "^0.5.0",
     "dotenv": "^16.4.7",
     "jsdom": "^24.0.0",
-    "markdown-it": "^14.1.0",
     "openai": "^4.76.0",
     "rss-parser": "^3.13.0"
   }

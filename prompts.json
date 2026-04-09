@@ -1,8 +1,25 @@
 {
-  "rss_feeds": ["https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja"],
-  "workflow": [
-    { "id": "filter", "model": "gpt-4o-mini", "prompt": "1-10でスコアを付け、{\"items\":[{\"url\":\"\",\"score\":8}]}形式で返せ", "enabled": true },
-    { "id": "analyst", "model": "o3-mini", "prompt": "詳細な日本語分析レポートを作成せよ", "enabled": true }
+  "rss_feeds": [
+    "https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja"
   ],
-  "settings": { "fetch_days": 3, "score_threshold": 8, "embedding_model": "text-embedding-3-small", "similarity_threshold": 0.85 }
+  "workflow": [
+    {
+      "id": "filter",
+      "model": "gpt-4o-mini",
+      "prompt": "提供されたニュースのリストに対し、戦争やビジネスや技術における『革新性』と『社会への影響度』の観点から、1-10で厳格に採点してください。結果は必ず以下のJSON形式で返してください。{'items':[{'url':'','score':8}]}",
+      "enabled": true
+    },
+    {
+      "id": "analyst",
+      "model": "o3-mini",
+      "prompt": "以下の情報を元に、技術的な背景と将来予測を含めた詳細な日本語レポートを作成してください。",
+      "enabled": true
+    }
+  ],
+  "settings": {
+    "fetch_days": 3,
+    "score_threshold": 7,
+    "embedding_model": "text-embedding-3-small",
+    "similarity_threshold": 0.85
+  }
 }

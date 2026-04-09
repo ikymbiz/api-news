@@ -67,15 +67,23 @@ async function run() {
 
   if (pending.length === 0) return console.log("No new articles.");
 
-  const filterStep = config.workflow.find(s => s.id === 'filter' && s.enabled);
+  // 全体に対して処理するステップ (scope: 'collection') の実行
   let targets = pending;
-  if (filterStep) {
+  const collectionSteps = config.workflow.filter(s => s.enabled && s.scope === 'collection');
+  
+  for (const step of collectionSteps) {
     try {
-      const filterRes = await askAI(filterStep.model, filterStep.prompt + " Output MUST be JSON format: {items:[{url,score}]}", JSON.stringify(pending.map(p => ({ t: p.title, u: p.link }))));
-      const jsonMatch = filterRes.match(/\{.*\}/s);
-      const scores = JSON.parse(jsonMatch ? jsonMatch[0] : filterRes).items || [];
-      targets = pending.filter(p => (scores.find(s => s.url === p.link)?.score || 0) >= settings.score_threshold);
-    } catch (e) { logError("Filter", "Error", e.message); }
+      console.log(`\n>> Batch Processing: [${step.id}] Model: ${step.model}`);
+      const batchRes = await askAI(
+        step.model, 
+        step.prompt + " Output MUST be JSON format: {items:[{url,score}]}", 
+        JSON.stringify(targets.map(p => ({ t: p.title, u: p.link })))
+      );
+      const jsonMatch = batchRes.match(/\{.*\}/s);
+      const scores = JSON.parse(jsonMatch ? jsonMatch[0] : batchRes).items || [];
+      // スコアに基づいてフィルタリング
+      targets = targets.filter(p => (scores.find(s => s.url === p.link)?.score || 0) >= settings.score_threshold);
+    } catch (e) { logError("CollectionStep", step.id, e.message); }
   }
 
   const apiOutput = [];
@@ -96,8 +104,10 @@ async function run() {
       if (vectorDb.some(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85))) continue;
 
       let currentContext = `Title: ${article.title}\nContent: ${finalContent}`;
+      
+      // 個別に対して処理するステップ (scope: 'item') の実行
       for (const step of config.workflow) {
-        if (!step.enabled || step.id === 'filter') continue;
+        if (!step.enabled || step.scope !== 'item') continue;
         console.log(`   Agent: [${step.id}] Model: ${step.model}`);
         currentContext = await askAI(step.model, step.prompt, currentContext);
       }

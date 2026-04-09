@@ -16,6 +16,7 @@ async function run() {
     console.error(`[${context}] ${message}`);
   };
 
+  // 設定の読み込み
   const configStr = await r2.download('prompts.json');
   if (!configStr) throw new Error("prompts.json missing.");
   const config = JSON.parse(configStr);
@@ -25,6 +26,7 @@ async function run() {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const googleAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+  // AIへの問い合わせ共通関数
   const askAI = async (model, systemPrompt, userContent) => {
     const m = model.toLowerCase();
     if (m.includes('gpt') || m.startsWith('o1') || m.startsWith('o3')) {
@@ -50,10 +52,12 @@ async function run() {
     throw new Error(`Unknown provider for model: ${model}`);
   };
 
+  // RSSフィードの取得
   let allItems = [];
   const parser = new Parser();
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - (settings.fetch_days || 3));
+  const daysLimit = settings.fetch_days || 3;
+  cutoff.setDate(cutoff.getDate() - daysLimit);
   
   for (const feedConfig of config.rss_feeds) {
     const url = feedConfig.url || feedConfig;
@@ -71,13 +75,13 @@ async function run() {
 
   let targets = pending;
 
-  // --- Collection Scope: チャンク化して一括判定 (変更箇所) ---
+  // --- 1. Collection Scope: チャンク化して一括判定 ---
   const collectionSteps = config.workflow.filter(s => s.enabled && s.scope === 'collection');
   const CHUNK_SIZE = settings.chunk_size || 20;
 
   for (const step of collectionSteps) {
     try {
-      console.log(`\n>> Batch Processing: [${step.id}] Model: ${step.model} (Chunk Size: ${CHUNK_SIZE})`);
+      console.log(`\n>> Batch Processing: [${step.id}] Model: ${step.model}`);
       let allScoredItems = [];
 
       for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
@@ -91,10 +95,10 @@ async function run() {
             JSON.stringify(chunk.map(p => ({ t: p.title, u: p.link })))
           );
           const jsonMatch = batchRes.match(/\{.*\}/s);
-          const scores = JSON.parse(jsonMatch ? jsonMatch[0] : batchRes).items || [];
-          allScoredItems.push(...scores);
+          const chunkScores = JSON.parse(jsonMatch ? jsonMatch[0] : batchRes).items || [];
+          allScoredItems.push(...chunkScores);
         } catch (e) {
-          logError("CollectionChunk", step.id, e.message);
+          logError("CollectionChunk", step.id, `Chunk starting at ${i}: ${e.message}`);
         }
       }
 
@@ -102,15 +106,19 @@ async function run() {
         const scored = allScoredItems.find(s => s.url === p.link);
         return (scored?.score || 0) >= settings.score_threshold;
       });
-      console.log(`>> Filtered: ${targets.length} articles remaining.`);
+      console.log(`>> Filtered: ${targets.length} articles remaining after [${step.id}].`);
     } catch (e) { logError("CollectionStep", step.id, e.message); }
   }
 
-  // --- Item Scope: 以降は変更なし ---
+  // --- 2. Item Scope: 記事ごとの個別処理 ---
   const apiOutput = [];
+  const nowStr = new Date().toISOString();
+
   for (const article of targets) {
     try {
       console.log(`\n>> Analyzing: ${article.title}`);
+      
+      // スクレイピング
       let bodyText = "";
       try {
         const res = await fetch(article.link, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
@@ -120,31 +128,51 @@ async function run() {
       } catch (e) { logError("Scraping", article.title, "Snippet Fallback"); }
 
       const finalContent = bodyText || article.contentSnippet || article.content || "N/A";
+
+      // ベクトルによる重複チェック
       const emb = await openai.embeddings.create({ model: settings.embedding_model, input: article.title });
       const vec = emb.data[0].embedding;
-      if (vectorDb.some(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85))) continue;
+      if (vectorDb.some(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85))) {
+        console.log("   Skipped: High similarity detected.");
+        continue;
+      }
 
+      // ワークフロー（エージェント・チェイン）の実行
       let currentContext = `Title: ${article.title}\nContent: ${finalContent}`;
-      
       for (const step of config.workflow) {
         if (!step.enabled || step.scope !== 'item') continue;
         console.log(`   Agent: [${step.id}] Model: ${step.model}`);
         currentContext = await askAI(step.model, step.prompt, currentContext);
       }
 
-      apiOutput.push({ title: article.title, link: article.link, analysis: currentContext, date: new Date().toISOString() });
-      db.push({ link: article.link, date: new Date().toISOString() });
-      vectorDb.push({ link: article.link, vec });
+      // 結果の蓄積
+      apiOutput.push({ title: article.title, link: article.link, analysis: currentContext, date: nowStr });
+      db.push({ link: article.link, date: nowStr });
+      vectorDb.push({ link: article.link, vec, date: nowStr });
     } catch (e) { logError("Chain", article.title, e.message); }
   }
 
-  if (apiOutput.length > 0) {
+  // --- 3. データの保存と期限管理 (3日間保持) ---
+  const retentionCutoff = new Date(new Date().getTime() - (daysLimit * 24 * 60 * 60 * 1000));
+
+  const updateAndUpload = async (filename, newData, oldData) => {
+    const merged = [...newData, ...oldData]
+      .filter(item => item.date && new Date(item.date) > retentionCutoff);
+    await r2.upload(filename, JSON.stringify(merged, null, 2), 'application/json');
+  };
+
+  if (apiOutput.length > 0 || targets.length > 0) {
+    // API出力
     const oldOutput = JSON.parse(await r2.download('api_output.json') || "[]");
-    const merged = [...apiOutput, ...oldOutput].slice(0, 50);
-    await r2.upload('api_output.json', JSON.stringify(merged, null, 2), 'application/json');
-    await r2.upload('articles_db.json', JSON.stringify(db.slice(-1000)), 'application/json');
-    await r2.upload('vectors.json', JSON.stringify(vectorDb.slice(-500)), 'application/json');
+    await updateAndUpload('api_output.json', apiOutput, oldOutput);
+
+    // URL DB
+    await r2.upload('articles_db.json', JSON.stringify(db.filter(d => new Date(d.date) > retentionCutoff)), 'application/json');
+
+    // Vector DB
+    await r2.upload('vectors.json', JSON.stringify(vectorDb.filter(v => v.date && new Date(v.date) > retentionCutoff)), 'application/json');
   }
+
   await saveLogs(errorLogs);
   console.log("=== SUCCESS ===");
 }
@@ -152,7 +180,8 @@ async function run() {
 async function saveLogs(logs) {
   try {
     const old = JSON.parse(await r2.download('error_log.json') || "[]");
-    await r2.upload('error_log.json', JSON.stringify([...logs, ...old].slice(0, 100), null, 2), 'application/json');
+    const mergedLogs = [...logs, ...old].slice(0, 100);
+    await r2.upload('error_log.json', JSON.stringify(mergedLogs, null, 2), 'application/json');
   } catch (e) { console.error(e); }
 }
 

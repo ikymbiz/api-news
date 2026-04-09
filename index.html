@@ -66,6 +66,22 @@
         </header>
 
         <section id="tab-rss" class="tab-content active space-y-4">
+            <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3 mb-6">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-xs font-bold text-orange-400 uppercase tracking-widest italic">Global Settings</h2>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[9px] text-slate-500 uppercase font-bold ml-1">Fetch Days (1-30)</label>
+                        <input type="number" id="setting-fetchDays" min="1" max="30" value="3" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-orange-300 outline-none">
+                    </div>
+                    <div>
+                        <label class="text-[9px] text-slate-500 uppercase font-bold ml-1">Score Threshold (0-100)</label>
+                        <input type="number" id="setting-scoreThreshold" min="0" max="100" value="70" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-orange-300 outline-none">
+                    </div>
+                </div>
+            </div>
+
             <div class="flex justify-between items-center px-2">
                 <h2 class="text-xs font-bold text-blue-400 uppercase tracking-widest italic">RSS Feed Sources</h2>
                 <button onclick="addRss()" class="bg-blue-600 text-[10px] px-3 py-1 rounded-full font-bold">+ ADD FEED</button>
@@ -192,6 +208,12 @@
                     typeof item === 'string' ? { name: "Untitled", url: item } : item
                 );
                 workflow = config.workflow || [];
+
+                // Settingsの読み込みとUIへの反映
+                const settings = config.settings || {};
+                document.getElementById('setting-fetchDays').value = settings.fetch_days !== undefined ? settings.fetch_days : 3;
+                document.getElementById('setting-scoreThreshold').value = settings.score_threshold !== undefined ? settings.score_threshold : 70;
+
                 renderRss();
                 renderWorkflow();
                 document.getElementById('st').innerText = "Online";
@@ -350,10 +372,19 @@
                 // 整形したデータをグローバル変数にも反映させて状態を同期する
                 workflow = formattedWorkflow;
 
+                // UIからSettingsの値を取得
+                const fetchDays = parseInt(document.getElementById('setting-fetchDays').value) || 3;
+                const scoreThreshold = parseInt(document.getElementById('setting-scoreThreshold').value) || 70;
+
                 const config = { 
                     rss_feeds: rss_feeds.filter(f => f.url.trim()), 
                     workflow: workflow, // 同期した変数を保存
-                    settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
+                    settings: { 
+                        fetch_days: fetchDays, 
+                        score_threshold: scoreThreshold, 
+                        embedding_model: "text-embedding-3-small", 
+                        similarity_threshold: 0.85 
+                    } 
                 };
                 
                 await s3.putObject({ Bucket: CONFIG.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();

@@ -12,6 +12,10 @@ permissions:
 
 jobs:
   deploy:
+    # ここを復活させます（GitHub Pagesのデプロイには必須です）
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,17 +23,17 @@ jobs:
 
       - name: Inject Public Config into HTML files
         run: |
-          # 秘密鍵は埋め込まず、公開URLに必要な情報のみを置換します
-          # カスタムドメインを使用する場合、アカウントIDやキーは不要になります
           sed -i "s|__R2_DOMAIN__|ai-news.feed.ddashpot.com|g" *.html
           sed -i "s|__GH_REPO__|${{ github.repository }}|g" *.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
+        
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
+          
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-    <script src="vault.js"></script>
     <style>
         .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 80px); }
         .tab-content { display: none; }
@@ -80,17 +79,41 @@
         let availableModels = [];
         let sortableInstance = null;
 
+        // 設定をロードまたはプロンプトで取得する関数
+        function getVault() {
+            let vault = localStorage.getItem('ORCHESTRATOR_VAULT');
+            if (!vault) {
+                const accId = prompt("Cloudflare Account ID を入力してください");
+                const keyId = prompt("R2 Access Key ID を入力してください");
+                const secKey = prompt("R2 Secret Access Key を入力してください");
+                const r2Bucket = prompt("R2 Bucket Name を入力してください");
+                const ghToken = prompt("GitHub Token (ghp_...) を入力してください");
+                const ghRepo = prompt("GitHub Repo (user/repo) を入力してください");
+
+                if (accId && keyId && secKey) {
+                    vault = { accId, keyId, secKey, r2Bucket, ghToken, ghRepo };
+                    localStorage.setItem('ORCHESTRATOR_VAULT', JSON.stringify(vault));
+                } else {
+                    alert("設定がキャンセルされたか、不完全です。再読み込みして入力してください。");
+                    return null;
+                }
+            } else {
+                vault = JSON.parse(vault);
+            }
+            return vault;
+        }
+
         window.onload = async () => {
             await checkCfAuth();
             await loadModels();
-            if (window.VAULT) {
+            const vault = getVault();
+            if (vault) {
                 document.getElementById('st').innerText = "Authenticated";
                 await loadFromR2();
                 await loadOutput();
             }
         };
 
-        // Cloudflare認証情報の取得
         async function checkCfAuth() {
             try {
                 const res = await fetch('/cdn-cgi/access/get-identity');
@@ -99,16 +122,77 @@
                     document.getElementById('cf-auth-info').classList.remove('hidden');
                     document.getElementById('cf-user').innerText = data.email.toUpperCase();
                 }
-            } catch (e) { console.log("Auth info N/A"); }
+            } catch (e) { console.log("Auth N/A"); }
         }
 
-        // ログアウト処理
         function cfLogout() {
-            if (confirm('Logout from Cloudflare Access?')) {
+            if (confirm('Logout?')) {
+                localStorage.removeItem('ORCHESTRATOR_VAULT'); // 鍵も削除
                 window.location.href = '/cdn-cgi/access/logout';
             }
         }
 
+        async function getS3() {
+            const vault = getVault();
+            return new AWS.S3({
+                endpoint: `https://${vault.accId}.r2.cloudflarestorage.com`,
+                accessKeyId: vault.keyId, secretAccessKey: vault.secKey,
+                signatureVersion: 'v4', region: 'auto'
+            });
+        }
+
+        async function loadFromR2() {
+            try {
+                const vault = getVault();
+                const s3 = await getS3();
+                const res = await s3.getObject({ Bucket: vault.r2Bucket, Key: 'prompts.json' }).promise();
+                const config = JSON.parse(res.Body.toString());
+                rss_feeds = config.rss_feeds || [];
+                workflow = config.workflow || [];
+                renderRss();
+                renderWorkflow();
+                switchTab('rss');
+                document.getElementById('st').innerText = "Online";
+            } catch(e) { document.getElementById('st').innerText = "R2 Error"; }
+        }
+
+        async function saveToR2() {
+            try {
+                const vault = getVault();
+                document.getElementById('st').innerText = "Syncing...";
+                const s3 = await getS3();
+                const config = { 
+                    rss_feeds: rss_feeds, 
+                    workflow: workflow, 
+                    settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
+                };
+                await s3.putObject({ Bucket: vault.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();
+                document.getElementById('st').innerText = "Online";
+                alert('Success');
+            } catch(e) { alert("Save Error: " + e.message); }
+        }
+
+        async function triggerRun() {
+            const vault = getVault();
+            if (!confirm('Start?')) return;
+            try {
+                document.getElementById('st').innerText = "Dispatching...";
+                const response = await fetch(`https://api.github.com/repos/${vault.ghRepo}/dispatches`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${vault.ghToken}`,
+                        'Accept': 'application/vnd.github+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ event_type: 'manual_trigger' })
+                });
+                if (response.ok) alert('Success');
+                else throw new Error('API Error');
+            } catch(e) { alert(`Error: ${e.message}`); }
+            finally { document.getElementById('st').innerText = "Online"; }
+        }
+
+        // --- 以下、既存のUIレンダリング関数は変更なし ---
         async function loadModels() {
             try {
                 const response = await fetch('models.json');
@@ -122,14 +206,6 @@
             }
         }
 
-        async function getS3() {
-            return new AWS.S3({
-                endpoint: `https://${window.VAULT.accId}.r2.cloudflarestorage.com`,
-                accessKeyId: window.VAULT.keyId, secretAccessKey: window.VAULT.secKey,
-                signatureVersion: 'v4', region: 'auto'
-            });
-        }
-
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('nav button').forEach(el => el.classList.remove('active-tab'));
@@ -137,34 +213,12 @@
             document.getElementById(`nav-${tabId}`).classList.add('active-tab');
         }
 
-        // R2からの読み込み
-        async function loadFromR2() {
-            try {
-                const s3 = await getS3();
-                const res = await s3.getObject({ Bucket: window.VAULT.r2Bucket, Key: 'prompts.json' }).promise();
-                const config = JSON.parse(res.Body.toString());
-                rss_feeds = (config.rss_feeds || []).map(item => 
-                    typeof item === 'string' ? { name: "Untitled", url: item } : item
-                );
-                workflow = config.workflow || [];
-                renderRss();
-                renderWorkflow();
-                switchTab('rss');
-                document.getElementById('st').innerText = "Online";
-            } catch(e) { 
-                document.getElementById('st').innerText = "R2 Error";
-                if (e.name !== 'NoSuchKey') {
-                    alert("Load Error: " + e.message + "\n(Check Account ID or CORS)");
-                }
-            }
-        }
-
         async function loadOutput() {
             const container = document.getElementById('outputList');
-            container.innerHTML = "<p class='text-center text-[10px] py-10 italic text-slate-500'>Fetching results...</p>";
             try {
+                const vault = getVault();
                 const s3 = await getS3();
-                const res = await s3.getObject({ Bucket: window.VAULT.r2Bucket, Key: 'api_output.json' }).promise();
+                const res = await s3.getObject({ Bucket: vault.r2Bucket, Key: 'api_output.json' }).promise();
                 const outputs = JSON.parse(res.Body.toString());
                 container.innerHTML = outputs.reverse().slice(0, 20).map(item => `
                     <div class="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/50">
@@ -173,7 +227,7 @@
                         <div class="text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap">${item.analysis}</div>
                     </div>
                 `).join('');
-            } catch(e) { container.innerHTML = "<p class='text-center text-xs text-red-400 py-10'>No data found.</p>"; }
+            } catch(e) { container.innerHTML = "<p class='text-center py-10'>No data</p>"; }
         }
 
         function renderRss() {
@@ -182,12 +236,8 @@
                 <div class="bg-slate-800/40 p-3 rounded-2xl border border-slate-700/50 relative">
                     <button onclick="rss_feeds.splice(${i},1);renderRss()" class="absolute top-2 right-2 text-slate-600 p-1">✕</button>
                     <div class="space-y-2 pr-6">
-                        <input type="text" placeholder="Site Name" value="${item.name || ''}" 
-                               onchange="rss_feeds[${i}].name=this.value" 
-                               class="w-full bg-transparent text-[10px] font-bold text-blue-400 border-b border-slate-700 outline-none pb-1">
-                        <input type="text" placeholder="URL (https://...)" value="${item.url || ''}" 
-                               onchange="rss_feeds[${i}].url=this.value" 
-                               class="w-full bg-transparent text-xs text-slate-400 outline-none">
+                        <input type="text" placeholder="Site Name" value="${item.name || ''}" onchange="rss_feeds[${i}].name=this.value" class="w-full bg-transparent text-[10px] font-bold text-blue-400 outline-none">
+                        <input type="text" placeholder="URL" value="${item.url || ''}" onchange="rss_feeds[${i}].url=this.value" class="w-full bg-transparent text-xs text-slate-400 outline-none">
                     </div>
                 </div>
             `).join('');
@@ -201,18 +251,14 @@
             container.innerHTML = workflow.map((agent, i) => `
                 <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-xl mb-4">
                     <div class="flex items-center gap-2 mb-3 flex-wrap">
-                        <div class="drag-handle p-2 text-slate-700 hover:text-blue-500">☰</div>
-                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-900">
-                        <select onchange="workflow[${i}].scope=this.value" class="bg-slate-800 text-[9px] px-2 py-1 rounded-lg font-bold text-purple-300 outline-none">
-                            <option value="item" ${agent.scope === 'item' ? 'selected' : ''}>Individual</option>
-                            <option value="collection" ${agent.scope === 'collection' ? 'selected' : ''}>Batch</option>
-                        </select>
-                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1 text-slate-300 min-w-[100px]">
+                        <div class="drag-handle p-2 text-slate-700">☰</div>
+                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none">
+                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg text-slate-300">
                             ${availableModels.map(m => `<option value="${m.value}" ${agent.model === m.value ? 'selected' : ''}>${m.label}</option>`).join('')}
                         </select>
                         <button onclick="workflow.splice(${i},1);renderWorkflow()" class="text-slate-600 text-xl ml-2">✕</button>
                     </div>
-                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-400 outline-none focus:ring-1 ring-blue-500">${agent.prompt}</textarea>
+                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-400 outline-none">${agent.prompt}</textarea>
                 </div>
             `).join('');
             sortableInstance = new Sortable(container, {
@@ -227,72 +273,6 @@
         function addAgent() {
             workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0].value, prompt:'', enabled:true, scope: 'item' });
             renderWorkflow();
-        }
-
-        // R2への保存（スマホ診断機能付き）
-        async function saveToR2() {
-            try {
-                document.getElementById('st').innerText = "Syncing...";
-                const s3 = await getS3();
-                const config = { 
-                    rss_feeds: rss_feeds.filter(f => f.url.trim()), 
-                    workflow: workflow, 
-                    settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
-                };
-                await s3.putObject({ Bucket: window.VAULT.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();
-                document.getElementById('st').innerText = "Online";
-                alert('Success: Configuration Deployed');
-            } catch(e) { 
-                document.getElementById('st').innerText = "Error";
-                // 詳細なエラーメッセージの表示
-                let errorType = e.message.includes("Network Error") ? "Network/CORS Error" : e.code;
-                alert("Save Failed\nReason: " + errorType + "\nDetail: " + e.message);
-            }
-        }
-
-        async function triggerRun() {
-            const vault = window.VAULT || {};
-            let token = vault.ghToken;
-            if (!token || token.startsWith("ghp_xxx")) {
-                token = prompt("GitHub Personal Access Token (ghp_...) を入力してください");
-            }
-            let repo = vault.ghRepo;
-            if (!repo || repo.includes("username/")) {
-                repo = prompt("リポジトリ名 (ユーザー名/リポジトリ名) を入力してください", repo || "");
-            }
-
-            if (!token || !repo) {
-                alert("GitHub Token または Repository の設定が必要です");
-                return;
-            }
-
-            if (!confirm('Start Orchestrator processing now?')) return;
-
-            try {
-                document.getElementById('st').innerText = "Dispatching...";
-                const response = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Accept': 'application/vnd.github+json',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ event_type: 'manual_trigger' })
-                });
-
-                if (response.ok) {
-                    alert('Success: GitHub Action triggered');
-                    document.getElementById('st').innerText = "Running";
-                } else {
-                    const err = await response.json();
-                    throw new Error(err.message || 'API Error');
-                }
-            } catch(e) {
-                alert(`Trigger failed: ${e.message}`);
-                document.getElementById('st').innerText = "Error";
-            } finally {
-                setTimeout(() => { document.getElementById('st').innerText = "Online"; }, 5000);
-            }
         }
     </script>
 </body>

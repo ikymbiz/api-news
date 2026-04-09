@@ -1,4 +1,4 @@
-Name: Intelligence Cycle
+name: Intelligence Cycle
 on:
   schedule:
     - cron: '0 */12 * * *' # 6時間ごとに自動実行

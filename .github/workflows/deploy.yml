@@ -20,14 +20,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inject Secrets into index.html
+      - name: Inject Secrets into HTML files
         run: |
-          sed -i "s|__R2_ACC_ID__|${{ secrets.R2_ACCOUNT_ID }}|g" index.html
-          sed -i "s|__R2_KEY_ID__|${{ secrets.R2_ACCESS_KEY_ID }}|g" index.html
-          sed -i "s|__R2_SEC_KEY__|${{ secrets.R2_SECRET_ACCESS_KEY }}|g" index.html
-          sed -i "s|__R2_BUCKET__|${{ vars.R2_BUCKET_NAME }}|g" index.html
-          sed -i "s|__GH_TOKEN__|${{ secrets.GH_PAT }}|g" index.html
-          sed -i "s|__GH_REPO__|${{ github.repository }}|g" index.html
+          # 全てのHTMLファイル（*.html）を対象に置換を実行します
+          sed -i "s|__R2_ACC_ID__|${{ secrets.R2_ACCOUNT_ID }}|g" *.html
+          sed -i "s|__R2_KEY_ID__|${{ secrets.R2_ACCESS_KEY_ID }}|g" *.html
+          sed -i "s|__R2_SEC_KEY__|${{ secrets.R2_SECRET_ACCESS_KEY }}|g" *.html
+          sed -i "s|__R2_BUCKET__|${{ vars.R2_BUCKET_NAME }}|g" *.html
+          sed -i "s|__GH_TOKEN__|${{ secrets.GH_PAT }}|g" *.html
+          sed -i "s|__GH_REPO__|${{ github.repository }}|g" *.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

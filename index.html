@@ -13,25 +13,11 @@
     <div class="max-w-xl mx-auto p-4">
         <header class="flex justify-between items-center mb-6">
             <h1 class="text-xl font-black text-blue-400 italic">ORCHESTRATOR</h1>
-            <span id="st" class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Standby</span>
+            <div class="flex items-center gap-3">
+                <button onclick="setupCredentials()" class="text-[10px] text-slate-500 border border-slate-700 px-2 py-1 rounded hover:bg-slate-800">KEYS SETUP</button>
+                <span id="st" class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Standby</span>
+            </div>
         </header>
-
-        <section class="bg-slate-800 rounded-3xl p-5 shadow-2xl mb-6 border border-slate-700 space-y-3">
-            <h2 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Connectivity</h2>
-            <input id="ghToken" type="password" placeholder="GitHub Token" class="w-full bg-slate-900 border border-slate-700 p-4 rounded-2xl text-sm outline-none">
-            <input id="ghRepo" type="text" placeholder="owner/repo" class="w-full bg-slate-900 border border-slate-700 p-4 rounded-2xl text-sm outline-none">
-            
-            <div class="grid grid-cols-1 gap-2 border-t border-slate-700 pt-3">
-                <input id="secKey" type="password" placeholder="R2 Secret Key" class="w-full bg-slate-900 border border-blue-900/30 p-3 rounded-xl text-xs outline-none">
-                <input id="geminiKey" type="password" placeholder="Gemini API Key" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl text-xs outline-none">
-                <input id="claudeKey" type="password" placeholder="Claude API Key" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl text-xs outline-none">
-            </div>
-
-            <div class="flex gap-2 pt-2">
-                <button onclick="fetchFromGitHub()" class="flex-1 bg-slate-700 py-4 rounded-2xl text-xs font-bold active:scale-95 transition-all tracking-tighter">同期</button>
-                <button onclick="saveConfigToDB()" class="flex-1 bg-blue-600 py-4 rounded-2xl text-xs font-bold active:scale-95 shadow-lg transition-all tracking-tighter">DB保存</button>
-            </div>
-        </section>
 
         <section class="space-y-4">
             <div class="flex justify-between items-end px-2">
@@ -51,9 +37,17 @@
         </div>
     </div>
 
-    <input id="accId" type="hidden"><input id="keyId" type="hidden">
+    <input id="ghToken" type="hidden">
+    <input id="secKey" type="hidden">
+    <input id="geminiKey" type="hidden">
+    <input id="claudeKey" type="hidden">
+    <input id="accId" type="hidden">
+    <input id="keyId" type="hidden">
 
     <script>
+        // レポジトリ名は変数に格納
+        const REPO_NAME = "owner/repo"; 
+        
         let workflow = [];
         const DB_NAME = 'OrchestratorDB_v2_7';
         const STORE_NAME = 'ConfigStore';
@@ -67,18 +61,30 @@
             });
         }
 
+        async function setupCredentials() {
+            const token = prompt("GitHub PATを入力してください", document.getElementById('ghToken').value || "");
+            const sKey = prompt("R2 Secret Keyを入力してください", document.getElementById('secKey').value || "");
+            const gKey = prompt("Gemini API Keyを入力してください", document.getElementById('geminiKey').value || "");
+            const cKey = prompt("Claude API Keyを入力してください", document.getElementById('claudeKey').value || "");
+
+            if (token !== null) document.getElementById('ghToken').value = token;
+            if (sKey !== null) document.getElementById('secKey').value = sKey;
+            if (gKey !== null) document.getElementById('geminiKey').value = gKey;
+            if (cKey !== null) document.getElementById('claudeKey').value = cKey;
+
+            await saveConfigToDB();
+        }
+
         async function saveConfigToDB() {
             const db = await openDB();
             db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put({
                 ghToken: document.getElementById('ghToken').value,
-                ghRepo: document.getElementById('ghRepo').value,
                 secKey: document.getElementById('secKey').value,
                 geminiKey: document.getElementById('geminiKey').value,
                 claudeKey: document.getElementById('claudeKey').value,
                 accId: document.getElementById('accId').value,
                 keyId: document.getElementById('keyId').value
             }, 'config');
-            alert('IndexedDBに鍵を保存しました');
             fetchFromGitHub();
         }
 
@@ -89,7 +95,6 @@
                 const d = req.result;
                 if(d) {
                     document.getElementById('ghToken').value = d.ghToken || '';
-                    document.getElementById('ghRepo').value = d.ghRepo || '';
                     document.getElementById('secKey').value = d.secKey || '';
                     document.getElementById('geminiKey').value = d.geminiKey || '';
                     document.getElementById('claudeKey').value = d.claudeKey || '';
@@ -102,11 +107,10 @@
 
         async function fetchFromGitHub() {
             const token = document.getElementById('ghToken').value;
-            const repo = document.getElementById('ghRepo').value;
-            if(!token || !repo) return;
+            if(!token || !REPO_NAME) return;
             document.getElementById('st').innerText = "Syncing...";
             try {
-                const res = await fetch(`https://api.github.com/repos/${repo}/actions/variables`, {
+                const res = await fetch(`https://api.github.com/repos/${REPO_NAME}/actions/variables`, {
                     headers: { 'Authorization': `token ${token}` }
                 });
                 const data = await res.json();

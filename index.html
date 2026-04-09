@@ -3,15 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Admin Pro v2.6</title>
+    <title>Multi-AI Orchestrator v2.7</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-    <style>
-        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-        .sortable-ghost { opacity: 0.2; background: #3b82f6 !important; }
-        .drag-handle { cursor: grab; touch-action: none; padding: 10px; }
-    </style>
+    <style> .safe-bottom { padding-bottom: env(safe-area-inset-bottom); } </style>
 </head>
 <body class="bg-slate-900 text-slate-100 select-none pb-32">
     <div class="max-w-xl mx-auto p-4">
@@ -21,37 +17,37 @@
         </header>
 
         <section class="bg-slate-800 rounded-3xl p-5 shadow-2xl mb-6 border border-slate-700 space-y-3">
+            <h2 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Connectivity</h2>
             <input id="ghToken" type="password" placeholder="GitHub Token" class="w-full bg-slate-900 border border-slate-700 p-4 rounded-2xl text-sm outline-none">
             <input id="ghRepo" type="text" placeholder="owner/repo" class="w-full bg-slate-900 border border-slate-700 p-4 rounded-2xl text-sm outline-none">
-            <input id="secKey" type="password" placeholder="R2 Secret Access Key" class="w-full bg-slate-900 border border-blue-900/40 p-4 rounded-2xl text-sm outline-none">
             
-            <div class="grid grid-cols-2 gap-2 text-[10px] font-mono">
-                <div class="bg-slate-950 p-2 rounded-xl truncate text-blue-300 border border-slate-900">AccID: <span id="dAcc">---</span></div>
-                <div id="dAuth" class="bg-slate-950 p-2 rounded-xl text-red-500 text-center uppercase font-bold border border-slate-900 tracking-tighter">Auth Locked</div>
+            <div class="grid grid-cols-1 gap-2 border-t border-slate-700 pt-3">
+                <input id="secKey" type="password" placeholder="R2 Secret Key" class="w-full bg-slate-900 border border-blue-900/30 p-3 rounded-xl text-xs outline-none">
+                <input id="geminiKey" type="password" placeholder="Gemini API Key" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl text-xs outline-none">
+                <input id="claudeKey" type="password" placeholder="Claude API Key" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl text-xs outline-none">
             </div>
-            
-            <div class="flex gap-2">
-                <button onclick="fetchFromGitHub()" class="flex-1 bg-slate-700 py-4 rounded-2xl text-xs font-bold active:scale-95 transition-all">情報の同期</button>
-                <button onclick="saveConfigToDB()" class="flex-1 bg-blue-600 py-4 rounded-2xl text-xs font-bold active:scale-95 shadow-lg transition-all">DBに保存</button>
+
+            <div class="flex gap-2 pt-2">
+                <button onclick="fetchFromGitHub()" class="flex-1 bg-slate-700 py-4 rounded-2xl text-xs font-bold active:scale-95 transition-all tracking-tighter">同期</button>
+                <button onclick="saveConfigToDB()" class="flex-1 bg-blue-600 py-4 rounded-2xl text-xs font-bold active:scale-95 shadow-lg transition-all tracking-tighter">DB保存</button>
             </div>
         </section>
 
         <section class="space-y-4">
             <div class="flex justify-between items-end px-2">
-                <h2 class="text-[10px] font-bold text-purple-400 uppercase tracking-widest italic">Workflow Chain</h2>
-                <button onclick="loadFromR2()" class="text-[10px] text-blue-400 underline italic">R2から再読込</button>
+                <h2 class="text-[10px] font-bold text-purple-400 uppercase tracking-widest italic tracking-tighter">Workflow Pipeline</h2>
+                <button onclick="loadFromR2()" class="text-[10px] text-blue-400 underline italic">R2 Reload</button>
             </div>
             
             <textarea id="rssFeeds" class="w-full bg-slate-800 border border-slate-700 p-4 rounded-3xl text-sm h-32 outline-none focus:ring-1 ring-purple-500 shadow-inner" placeholder="RSS URLs..."></textarea>
             
-            <div id="agentList" class="space-y-4">
-                </div>
+            <div id="agentList" class="space-y-4"></div>
             
-            <button onclick="addAgent()" class="w-full py-5 border-2 border-dashed border-slate-700 rounded-3xl text-slate-500 font-bold text-xs active:bg-slate-800 transition-all">+ エージェントを追加</button>
+            <button onclick="addAgent()" class="w-full py-5 border-2 border-dashed border-slate-700 rounded-3xl text-slate-500 font-bold text-xs active:bg-slate-800 transition-all">+ エージェント追加</button>
         </section>
 
         <div class="fixed bottom-0 left-0 right-0 p-4 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 safe-bottom z-50">
-            <button onclick="saveToR2()" class="w-full bg-gradient-to-r from-red-600 to-rose-600 py-4 rounded-2xl font-black text-lg shadow-2xl active:scale-95 transition-all">🚀 R2へ保存 & 反映</button>
+            <button onclick="saveToR2()" class="w-full bg-gradient-to-r from-red-600 to-rose-600 py-4 rounded-2xl font-black text-lg shadow-2xl active:scale-95 transition-all">🚀 R2へ保存・即時デプロイ</button>
         </div>
     </div>
 
@@ -59,7 +55,7 @@
 
     <script>
         let workflow = [];
-        const DB_NAME = 'OrchestratorDB_v2';
+        const DB_NAME = 'OrchestratorDB_v2_7';
         const STORE_NAME = 'ConfigStore';
 
         function openDB() {
@@ -77,10 +73,12 @@
                 ghToken: document.getElementById('ghToken').value,
                 ghRepo: document.getElementById('ghRepo').value,
                 secKey: document.getElementById('secKey').value,
+                geminiKey: document.getElementById('geminiKey').value,
+                claudeKey: document.getElementById('claudeKey').value,
                 accId: document.getElementById('accId').value,
                 keyId: document.getElementById('keyId').value
             }, 'config');
-            alert('DBに記憶しました');
+            alert('IndexedDBに鍵を保存しました');
             fetchFromGitHub();
         }
 
@@ -93,6 +91,8 @@
                     document.getElementById('ghToken').value = d.ghToken || '';
                     document.getElementById('ghRepo').value = d.ghRepo || '';
                     document.getElementById('secKey').value = d.secKey || '';
+                    document.getElementById('geminiKey').value = d.geminiKey || '';
+                    document.getElementById('claudeKey').value = d.claudeKey || '';
                     document.getElementById('accId').value = d.accId || '';
                     document.getElementById('keyId').value = d.keyId || '';
                     fetchFromGitHub();
@@ -103,28 +103,20 @@
         async function fetchFromGitHub() {
             const token = document.getElementById('ghToken').value;
             const repo = document.getElementById('ghRepo').value;
-            const st = document.getElementById('st');
             if(!token || !repo) return;
-            st.innerText = "Syncing...";
+            document.getElementById('st').innerText = "Syncing...";
             try {
                 const res = await fetch(`https://api.github.com/repos/${repo}/actions/variables`, {
                     headers: { 'Authorization': `token ${token}` }
                 });
                 const data = await res.json();
                 data.variables.forEach(v => {
-                    if (v.name === 'R2_ACCOUNT_ID') {
-                        document.getElementById('accId').value = v.value;
-                        document.getElementById('dAcc').innerText = v.value.substring(0,8)+"...";
-                    }
+                    if (v.name === 'R2_ACCOUNT_ID') document.getElementById('accId').value = v.value;
                     if (v.name === 'R2_ACCESS_KEY_ID') document.getElementById('keyId').value = v.value;
                 });
-                st.innerText = "GitHub: OK";
-                if(document.getElementById('secKey').value && document.getElementById('keyId').value) {
-                    document.getElementById('dAuth').innerText = "READY";
-                    document.getElementById('dAuth').className = "bg-slate-950 p-2 rounded-xl text-green-400 text-center font-bold uppercase";
-                    loadFromR2();
-                }
-            } catch (e) { st.innerText = "Sync Error"; }
+                document.getElementById('st').innerText = "Auth Ready";
+                if(document.getElementById('secKey').value) loadFromR2();
+            } catch (e) { document.getElementById('st').innerText = "Sync Error"; }
         }
 
         async function getS3() {
@@ -152,43 +144,44 @@
             container.innerHTML = workflow.map((agent, i) => `
                 <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-xl" data-id="${agent.id}">
                     <div class="flex items-center gap-2 mb-3">
-                        <div class="drag-handle text-slate-700 active:text-blue-500 p-2">
+                        <div class="drag-handle p-2 text-slate-700 active:text-blue-500">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
                         </div>
-                        <input value="${agent.id}" onchange="updateAgentData(${i}, 'id', this.value)" class="bg-transparent font-black text-blue-400 text-sm w-32 outline-none border-b border-slate-900 focus:border-blue-500">
-                        <select onchange="updateAgentData(${i}, 'model', this.value)" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold">
-                            <option value="gpt-4o-mini" ${agent.model==='gpt-4o-mini'?'selected':''}>4o-mini</option>
-                            <option value="o3-mini" ${agent.model==='o3-mini'?'selected':''}>o3-mini</option>
-                            <option value="gpt-4o" ${agent.model==='gpt-4o'?'selected':''}>gpt-4o</option>
+                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-900">
+                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1">
+                            <optgroup label="OpenAI">
+                                <option value="gpt-4o-mini" ${agent.model==='gpt-4o-mini'?'selected':''}>gpt-4o-mini</option>
+                                <option value="o3-mini" ${agent.model==='o3-mini'?'selected':''}>o3-mini</option>
+                                <option value="gpt-4o" ${agent.model==='gpt-4o'?'selected':''}>gpt-4o</option>
+                            </optgroup>
+                            <optgroup label="Anthropic">
+                                <option value="claude-3-5-sonnet-latest" ${agent.model==='claude-3-5-sonnet-latest'?'selected':''}>Claude 3.5 Sonnet</option>
+                                <option value="claude-3-5-haiku-latest" ${agent.model==='claude-3-5-haiku-latest'?'selected':''}>Claude 3.5 Haiku</option>
+                            </optgroup>
+                            <optgroup label="Google Gemini">
+                                <option value="gemini-1.5-flash" ${agent.model==='gemini-1.5-flash'?'selected':''}>Gemini 1.5 Flash</option>
+                                <option value="gemini-1.5-pro" ${agent.model==='gemini-1.5-pro'?'selected':''}>Gemini 1.5 Pro</option>
+                                <option value="gemini-2.0-flash-exp" ${agent.model==='gemini-2.0-flash-exp'?'selected':''}>Gemini 2.0 Flash</option>
+                            </optgroup>
                         </select>
-                        <div class="ml-auto flex gap-3 items-center">
-                            <input type="checkbox" ${agent.enabled?'checked':''} onchange="updateAgentData(${i}, 'enabled', this.checked)" class="w-5 h-5 accent-blue-500 rounded">
-                            <button onclick="removeAgent(${i})" class="text-slate-600 text-lg">✕</button>
-                        </div>
+                        <button onclick="workflow.splice(${i},1);render()" class="text-slate-600 text-xl ml-2">✕</button>
                     </div>
-                    <textarea onchange="updateAgentData(${i}, 'prompt', this.value)" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-300 outline-none focus:ring-1 ring-blue-500" placeholder="System Prompt...">${agent.prompt}</textarea>
+                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-300 outline-none focus:ring-1 ring-blue-500" placeholder="Agent Prompt...">${agent.prompt}</textarea>
                 </div>
             `).join('');
 
-            // ドラッグ並び替えの初期化
-            if (window.sortableInstance) window.sortableInstance.destroy();
-            window.sortableInstance = new Sortable(container, {
+            new Sortable(container, {
                 handle: '.drag-handle',
                 animation: 250,
-                delay: 150, // モバイルでの誤爆防止
-                ghostClass: 'sortable-ghost',
-                onEnd: function (evt) {
-                    // DOMの並び順に合わせて配列を物理的に再構築
-                    const item = workflow.splice(evt.oldIndex, 1)[0];
-                    workflow.splice(evt.newIndex, 0, item);
-                    // インデックスがずれるため、一度だけ再描画してデータを確定させる
+                delay: 150,
+                onEnd: (e) => {
+                    const item = workflow.splice(e.oldIndex, 1)[0];
+                    workflow.splice(e.newIndex, 0, item);
                     setTimeout(render, 50);
                 }
             });
         }
 
-        function updateAgentData(i, key, val) { workflow[i][key] = val; }
-        function removeAgent(i) { workflow.splice(i, 1); render(); }
         function addAgent() {
             workflow.push({ id: 'agent_'+Date.now(), model:'gpt-4o-mini', prompt:'', enabled:true });
             render();
@@ -203,7 +196,7 @@
                     settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
                 };
                 await s3.putObject({ Bucket:'rss-reports', Key:'prompts.json', Body:JSON.stringify(config,null,2), ContentType:'application/json' }).promise();
-                alert('Success: R2に保存されました');
+                alert('Success: マルチAI設定がデプロイされました！');
             } catch(e) { alert("Save Error"); }
         }
 

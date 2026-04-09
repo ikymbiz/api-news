@@ -16,17 +16,16 @@ async function run() {
     console.error(`[${context}] ${message}`);
   };
 
+  // r2.download 内部で process.env.R2_BUCKET_NAME を参照するように実装してください
   const configStr = await r2.download('prompts.json');
   if (!configStr) throw new Error("prompts.json missing.");
   const config = JSON.parse(configStr);
   const settings = config.settings;
 
-  // 各プロバイダーの初期化（環境変数から取得）
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const googleAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-  // --- AI実行の抽象化関数 ---
   const askAI = async (model, systemPrompt, userContent) => {
     if (model.startsWith('gpt') || model.startsWith('o3')) {
       const res = await openai.chat.completions.create({
@@ -51,7 +50,6 @@ async function run() {
     throw new Error(`Unknown model: ${model}`);
   };
 
-  // 1. RSS取得
   let allItems = [];
   const parser = new Parser();
   const cutoff = new Date();
@@ -69,7 +67,6 @@ async function run() {
 
   if (pending.length === 0) return console.log("No new articles.");
 
-  // 2. フィルタリング
   const filterStep = config.workflow.find(s => s.id === 'filter' && s.enabled);
   let targets = pending;
   if (filterStep) {
@@ -81,7 +78,6 @@ async function run() {
     } catch (e) { logError("Filter", "Error", e.message); }
   }
 
-  // 3. 各記事の処理
   const apiOutput = [];
   for (const article of targets) {
     try {

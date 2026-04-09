@@ -39,13 +39,13 @@
 
     <input id="ghToken" type="hidden">
     <input id="secKey" type="hidden">
+    <input id="r2Bucket" type="hidden">
     <input id="geminiKey" type="hidden">
     <input id="claudeKey" type="hidden">
     <input id="accId" type="hidden">
     <input id="keyId" type="hidden">
 
     <script>
-        // レポジトリ名は変数に格納
         const REPO_NAME = "owner/repo"; 
         
         let workflow = [];
@@ -64,11 +64,13 @@
         async function setupCredentials() {
             const token = prompt("GitHub PATを入力してください", document.getElementById('ghToken').value || "");
             const sKey = prompt("R2 Secret Keyを入力してください", document.getElementById('secKey').value || "");
+            const bucket = prompt("R2 Bucket Nameを入力してください", document.getElementById('r2Bucket').value || "");
             const gKey = prompt("Gemini API Keyを入力してください", document.getElementById('geminiKey').value || "");
             const cKey = prompt("Claude API Keyを入力してください", document.getElementById('claudeKey').value || "");
 
             if (token !== null) document.getElementById('ghToken').value = token;
             if (sKey !== null) document.getElementById('secKey').value = sKey;
+            if (bucket !== null) document.getElementById('r2Bucket').value = bucket;
             if (gKey !== null) document.getElementById('geminiKey').value = gKey;
             if (cKey !== null) document.getElementById('claudeKey').value = cKey;
 
@@ -80,6 +82,7 @@
             db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put({
                 ghToken: document.getElementById('ghToken').value,
                 secKey: document.getElementById('secKey').value,
+                r2Bucket: document.getElementById('r2Bucket').value,
                 geminiKey: document.getElementById('geminiKey').value,
                 claudeKey: document.getElementById('claudeKey').value,
                 accId: document.getElementById('accId').value,
@@ -96,6 +99,7 @@
                 if(d) {
                     document.getElementById('ghToken').value = d.ghToken || '';
                     document.getElementById('secKey').value = d.secKey || '';
+                    document.getElementById('r2Bucket').value = d.r2Bucket || '';
                     document.getElementById('geminiKey').value = d.geminiKey || '';
                     document.getElementById('claudeKey').value = d.claudeKey || '';
                     document.getElementById('accId').value = d.accId || '';
@@ -119,7 +123,7 @@
                     if (v.name === 'R2_ACCESS_KEY_ID') document.getElementById('keyId').value = v.value;
                 });
                 document.getElementById('st').innerText = "Auth Ready";
-                if(document.getElementById('secKey').value) loadFromR2();
+                if(document.getElementById('secKey').value && document.getElementById('r2Bucket').value) loadFromR2();
             } catch (e) { document.getElementById('st').innerText = "Sync Error"; }
         }
 
@@ -135,7 +139,10 @@
         async function loadFromR2() {
             try {
                 const s3 = await getS3();
-                const res = await s3.getObject({ Bucket: 'rss-reports', Key: 'prompts.json' }).promise();
+                const res = await s3.getObject({ 
+                    Bucket: document.getElementById('r2Bucket').value, 
+                    Key: 'prompts.json' 
+                }).promise();
                 const config = JSON.parse(res.Body.toString());
                 document.getElementById('rssFeeds').value = config.rss_feeds.join('\n');
                 workflow = config.workflow;
@@ -199,7 +206,12 @@
                     workflow, 
                     settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
                 };
-                await s3.putObject({ Bucket:'rss-reports', Key:'prompts.json', Body:JSON.stringify(config,null,2), ContentType:'application/json' }).promise();
+                await s3.putObject({ 
+                    Bucket: document.getElementById('r2Bucket').value, 
+                    Key: 'prompts.json', 
+                    Body: JSON.stringify(config,null,2), 
+                    ContentType: 'application/json' 
+                }).promise();
                 alert('Success: マルチAI設定がデプロイされました！');
             } catch(e) { alert("Save Error"); }
         }

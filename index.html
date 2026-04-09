@@ -20,7 +20,12 @@
     <div class="max-w-xl mx-auto p-4 safe-bottom">
         <header class="flex justify-between items-center mb-6">
             <h1 class="text-xl font-black text-blue-400 italic tracking-tighter">ORCHESTRATOR v3.2</h1>
-            <span id="st" class="text-[10px] font-mono text-slate-500 uppercase">Initialising</span>
+            <div class="text-right flex flex-col items-end">
+                <div id="cf-auth-info" class="text-[9px] font-mono text-blue-500 hidden mb-1">
+                    <span id="cf-user"></span> | <button onclick="cfLogout()" class="underline hover:text-white">LOGOUT</button>
+                </div>
+                <span id="st" class="text-[10px] font-mono text-slate-500 uppercase">Initialising</span>
+            </div>
         </header>
 
         <section id="tab-rss" class="tab-content active space-y-4">
@@ -76,6 +81,7 @@
         let sortableInstance = null;
 
         window.onload = async () => {
+            await checkCfAuth();
             await loadModels();
             if (window.VAULT) {
                 document.getElementById('st').innerText = "Authenticated";
@@ -83,6 +89,21 @@
                 await loadOutput();
             }
         };
+
+        async function checkCfAuth() {
+            try {
+                const res = await fetch('/cdn-cgi/access/get-identity');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('cf-auth-info').classList.remove('hidden');
+                    document.getElementById('cf-user').innerText = data.email.toUpperCase();
+                }
+            } catch (e) { console.log("Auth info N/A"); }
+        }
+
+        function cfLogout() {
+            if (confirm('Logout?')) window.location.href = '/cdn-cgi/access/logout';
+        }
 
         async function loadModels() {
             try {
@@ -210,32 +231,27 @@
                 await s3.putObject({ Bucket: window.VAULT.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();
                 document.getElementById('st').innerText = "Online";
                 alert('Success: Configuration Deployed');
-            } catch(e) { alert("Error saving to R2"); }
+            } catch(e) { 
+                alert("Error: " + e.message);
+                document.getElementById('st').innerText = "Error"; 
+            }
         }
 
-        // 入力ダイアログ方式に更新
         async function triggerRun() {
             const vault = window.VAULT || {};
-            
-            // トークンが設定されていない、またはプレースホルダーの場合に入力を求める
             let token = vault.ghToken;
             if (!token || token.startsWith("ghp_xxx")) {
                 token = prompt("GitHub Personal Access Token (ghp_...) を入力してください");
             }
-            
-            // リポジトリ名も同様
             let repo = vault.ghRepo;
             if (!repo || repo.includes("username/")) {
                 repo = prompt("リポジトリ名 (ユーザー名/リポジトリ名) を入力してください", repo || "");
             }
-
             if (!token || !repo) {
                 alert("GitHub Token または Repository の設定が必要です");
                 return;
             }
-
             if (!confirm('Start Orchestrator processing now?')) return;
-
             try {
                 document.getElementById('st').innerText = "Dispatching...";
                 const response = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
@@ -247,7 +263,6 @@
                     },
                     body: JSON.stringify({ event_type: 'manual_trigger' })
                 });
-
                 if (response.ok) {
                     alert('Success: GitHub Action triggered');
                     document.getElementById('st').innerText = "Running";

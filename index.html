@@ -34,8 +34,10 @@
 
     <script>
         let workflow = [];
+        let availableModels = [];
 
         window.onload = async () => {
+            await loadModels();
             if (window.VAULT) {
                 document.getElementById('st').innerText = "Authenticated";
                 await loadFromR2();
@@ -43,6 +45,20 @@
                 document.getElementById('st').innerText = "Vault Missing";
             }
         };
+
+        async function loadModels() {
+            try {
+                const response = await fetch('models.json');
+                availableModels = await response.json();
+            } catch (e) {
+                console.error("Failed to load models.json", e);
+                availableModels = [
+                    { "value": "gpt-4o-mini", "label": "gpt-4o-mini" },
+                    { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" },
+                    { "value": "gemini-2.0-flash-exp", "label": "Gemini 2.0 Flash" }
+                ];
+            }
+        }
 
         async function getS3() {
             return new AWS.S3({
@@ -75,9 +91,9 @@
                         </div>
                         <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-900">
                         <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1">
-                            <option value="gpt-4o-mini" ${agent.model==='gpt-4o-mini'?'selected':''}>gpt-4o-mini</option>
-                            <option value="claude-3-5-sonnet-latest" ${agent.model==='claude-3-5-sonnet-latest'?'selected':''}>Claude 3.5 Sonnet</option>
-                            <option value="gemini-2.0-flash-exp" ${agent.model==='gemini-2.0-flash-exp'?'selected':''}>Gemini 2.0 Flash</option>
+                            ${availableModels.map(m => `
+                                <option value="${m.value}" ${agent.model === m.value ? 'selected' : ''}>${m.label}</option>
+                            `).join('')}
                         </select>
                         <button onclick="workflow.splice(${i},1);render()" class="text-slate-600 text-xl ml-2">✕</button>
                     </div>
@@ -93,7 +109,8 @@
         }
 
         function addAgent() {
-            workflow.push({ id: 'agent_'+Date.now(), model:'gpt-4o-mini', prompt:'', enabled:true });
+            const defaultModel = availableModels.length > 0 ? availableModels[0].value : 'gpt-4o-mini';
+            workflow.push({ id: 'agent_'+Date.now(), model: defaultModel, prompt:'', enabled:true });
             render();
         }
 

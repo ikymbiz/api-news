@@ -141,87 +141,101 @@ async function run() {
     } catch (e) { logError("CollectionStep", step.id, e.message); }
   }
 
-  // --- 2. Item Scope: 記事ごとの個別処理 ---
+  // --- 2. Item Scope: 記事ごとの個別処理 (準並列処理版) ---
   const apiOutput = [];
   const nowStr = new Date().toISOString();
+  const ITEM_CHUNK_SIZE = settings.item_chunk_size || 5;
 
-  for (const article of targets) {
-    try {
-      // スクレイピング
-      let bodyText = "";
+  const chunkArray = (array, size) => {
+    return Array.from({ length: Math.ceil(array.length / size) }, (v, i) =>
+      array.slice(i * size, i * size + size)
+    );
+  };
+
+  const itemChunks = chunkArray(targets, ITEM_CHUNK_SIZE);
+
+  for (let i = 0; i < itemChunks.length; i++) {
+    console.log(`\n>> Item Processing Chunk [${i + 1}/${itemChunks.length}]`);
+    const currentChunk = itemChunks[i];
+
+    await Promise.all(currentChunk.map(async (article) => {
       try {
-        const res = await fetch(article.link, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
-        const html = await res.text();
-        const doc = new JSDOM(html, { url: article.link });
-        bodyText = (new Readability(doc.window.document)).parse()?.textContent.trim().substring(0, 10000) || "";
-      } catch (e) { logError("Scraping", article.title, "Fallback to snippet"); }
+        // スクレイピング
+        let bodyText = "";
+        try {
+          const res = await fetch(article.link, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
+          const html = await res.text();
+          const doc = new JSDOM(html, { url: article.link });
+          bodyText = (new Readability(doc.window.document)).parse()?.textContent.trim().substring(0, 10000) || "";
+        } catch (e) { logError("Scraping", article.title, "Fallback to snippet"); }
 
-      const finalContent = bodyText || article.contentSnippet || article.content || "N/A";
+        const finalContent = bodyText || article.contentSnippet || article.content || "N/A";
 
-      // ベクトルによる重複チェック
-      const emb = await openai.embeddings.create({ model: settings.embedding_model, input: article.title });
-      const vec = emb.data[0].embedding;
-      const simMatch = vectorDb.find(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85));
-      if (simMatch) {
-        logProcess(article.title, article.link, 'SKIPPED', `High similarity with: ${simMatch.link}`);
-        continue;
-      }
-
-      // ワークフロー（エージェント・チェイン）の実行
-      let currentContext = `Title: ${article.title}\nContent: ${finalContent}`;
-      let shouldSkip = false;
-      let skipReason = "";
-
-      for (const step of config.workflow) {
-        if (!step.enabled || step.scope !== 'item') continue;
-
-        // キーワード・項目フィルタ判定
-        if (step.type === 'filter') {
-          try {
-            const jsonMatch = currentContext.match(/\{.*\}/s);
-            const data = JSON.parse(jsonMatch ? jsonMatch[0] : currentContext);
-            const targetValue = String(data[step.target_key] || "").toLowerCase();
-            const matchType = step.match_type || "partial";
-
-            const checkMatch = (list, val) => {
-              if (!list || !Array.isArray(list)) return false;
-              return list.some(kw => matchType === 'exact' ? val === kw.toLowerCase() : val.includes(kw.toLowerCase()));
-            };
-
-            if (step.exclude && checkMatch(step.exclude, targetValue)) {
-              shouldSkip = true;
-              skipReason = `Excluded keyword in ${step.target_key}`;
-              break;
-            }
-            if (step.include && step.include.length > 0 && !checkMatch(step.include, targetValue)) {
-              shouldSkip = true;
-              skipReason = `Required keyword not found in ${step.target_key}`;
-              break;
-            }
-          } catch (e) {
-            console.warn(`Filter Error: ${e.message}`);
-          }
-          continue; 
+        // ベクトルによる重複チェック
+        const emb = await openai.embeddings.create({ model: settings.embedding_model, input: article.title });
+        const vec = emb.data[0].embedding;
+        const simMatch = vectorDb.find(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85));
+        if (simMatch) {
+          logProcess(article.title, article.link, 'SKIPPED', `High similarity with: ${simMatch.link}`);
+          return; // map内のためcontinueからreturnに変更
         }
 
-        currentContext = await askAI(step.model, step.prompt, currentContext);
+        // ワークフロー（エージェント・チェイン）の実行
+        let currentContext = `Title: ${article.title}\nContent: ${finalContent}`;
+        let shouldSkip = false;
+        let skipReason = "";
+
+        for (const step of config.workflow) {
+          if (!step.enabled || step.scope !== 'item') continue;
+
+          // キーワード・項目フィルタ判定
+          if (step.type === 'filter') {
+            try {
+              const jsonMatch = currentContext.match(/\{.*\}/s);
+              const data = JSON.parse(jsonMatch ? jsonMatch[0] : currentContext);
+              const targetValue = String(data[step.target_key] || "").toLowerCase();
+              const matchType = step.match_type || "partial";
+
+              const checkMatch = (list, val) => {
+                if (!list || !Array.isArray(list)) return false;
+                return list.some(kw => matchType === 'exact' ? val === kw.toLowerCase() : val.includes(kw.toLowerCase()));
+              };
+
+              if (step.exclude && checkMatch(step.exclude, targetValue)) {
+                shouldSkip = true;
+                skipReason = `Excluded keyword in ${step.target_key}`;
+                break;
+              }
+              if (step.include && step.include.length > 0 && !checkMatch(step.include, targetValue)) {
+                shouldSkip = true;
+                skipReason = `Required keyword not found in ${step.target_key}`;
+                break;
+              }
+            } catch (e) {
+              console.warn(`Filter Error: ${e.message}`);
+            }
+            continue; 
+          }
+
+          currentContext = await askAI(step.model, step.prompt, currentContext);
+        }
+
+        if (shouldSkip) {
+          logProcess(article.title, article.link, 'FILTERED', skipReason);
+          return; // map内のためcontinueからreturnに変更
+        }
+
+        // 成功の記録
+        logProcess(article.title, article.link, 'SUCCESS', 'Fully processed and analyzed');
+        apiOutput.push({ title: article.title, link: article.link, analysis: currentContext, date: nowStr });
+        db.push({ link: article.link, date: nowStr });
+        vectorDb.push({ link: article.link, vec, date: nowStr });
+
+      } catch (e) { 
+        logError("Chain", article.title, e.message);
+        logProcess(article.title, article.link, 'ERROR', e.message);
       }
-
-      if (shouldSkip) {
-        logProcess(article.title, article.link, 'FILTERED', skipReason);
-        continue;
-      }
-
-      // 成功の記録
-      logProcess(article.title, article.link, 'SUCCESS', 'Fully processed and analyzed');
-      apiOutput.push({ title: article.title, link: article.link, analysis: currentContext, date: nowStr });
-      db.push({ link: article.link, date: nowStr });
-      vectorDb.push({ link: article.link, vec, date: nowStr });
-
-    } catch (e) { 
-      logError("Chain", article.title, e.message);
-      logProcess(article.title, article.link, 'ERROR', e.message);
-    }
+    }));
   }
 
   // --- 3. データの保存と期限管理 ---

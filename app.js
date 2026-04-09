@@ -28,15 +28,13 @@ async function run() {
   const askAI = async (model, systemPrompt, userContent) => {
     const m = model.toLowerCase();
     
-    // --- 変更箇所: モデル名の判定ロジックを柔軟に ---
-    // OpenAI系 (gpt-5, o1, o3 などに対応)
+    // モデル名の判定ロジックを柔軟にし、新しい命名規則（gpt-5, o3, claude-4, gemini-3）に対応
     if (m.includes('gpt') || m.startsWith('o1') || m.startsWith('o3')) {
       const res = await openai.chat.completions.create({
         model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }]
       });
       return res.choices[0].message.content;
     } 
-    // Anthropic系 (claude-4 などに対応)
     else if (m.includes('claude')) {
       const res = await anthropic.messages.create({
         model, max_tokens: 4096, system: systemPrompt,
@@ -44,7 +42,6 @@ async function run() {
       });
       return res.content[0].text;
     } 
-    // Google系 (gemini-3 などに対応)
     else if (m.includes('gemini')) {
       const genModel = googleAI.getGenerativeModel({ model });
       const res = await genModel.generateContent({
@@ -60,11 +57,12 @@ async function run() {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - (settings.fetch_days || 3));
   
-  for (const url of config.rss_feeds) {
+  for (const feedConfig of config.rss_feeds) {
+    const url = feedConfig.url || feedConfig;
     try {
-      const feed = await parser.parseURL(url.url || url);
+      const feed = await parser.parseURL(url);
       allItems.push(...feed.items.filter(i => new Date(i.pubDate) > cutoff));
-    } catch (e) { logError("RSS", url.url || url, e.message); }
+    } catch (e) { logError("RSS", url, e.message); }
   }
 
   const db = JSON.parse(await r2.download('articles_db.json') || "[]");
@@ -122,9 +120,9 @@ async function run() {
   }
 
   if (apiOutput.length > 0) {
-    const existingOutput = JSON.parse(await r2.download('api_output.json') || "[]");
-    const mergedOutput = [...apiOutput, ...existingOutput].slice(0, 50);
-    await r2.upload('api_output.json', JSON.stringify(mergedOutput, null, 2), 'application/json');
+    const oldOutput = JSON.parse(await r2.download('api_output.json') || "[]");
+    const merged = [...apiOutput, ...oldOutput].slice(0, 50);
+    await r2.upload('api_output.json', JSON.stringify(merged, null, 2), 'application/json');
     await r2.upload('articles_db.json', JSON.stringify(db.slice(-1000)), 'application/json');
     await r2.upload('vectors.json', JSON.stringify(vectorDb.slice(-500)), 'application/json');
   }

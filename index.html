@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Multi-AI Orchestrator v2.7</title>
+    <title>Multi-AI Orchestrator v2.8</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
@@ -17,22 +17,42 @@
             <span id="st" class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Initialising</span>
         </header>
 
+        <section class="space-y-4 mb-10">
+            <div class="flex justify-between items-end px-2">
+                <h2 class="text-[10px] font-bold text-blue-400 uppercase tracking-widest italic">RSS Feed Sources</h2>
+                <button onclick="loadFromR2()" class="text-[10px] text-slate-500 underline italic">R2 Reload</button>
+            </div>
+            
+            <div id="rssList" class="space-y-2">
+                </div>
+            
+            <button onclick="addRss()" class="w-full py-3 border border-dashed border-slate-700 rounded-2xl text-slate-500 text-[10px] font-bold uppercase active:bg-slate-800 tracking-widest">
+                + フィード追加
+            </button>
+        </section>
+
         <section class="space-y-4">
             <div class="flex justify-between items-end px-2">
-                <h2 class="text-[10px] font-bold text-purple-400 uppercase tracking-widest italic tracking-tighter">Workflow Pipeline</h2>
-                <button onclick="loadFromR2()" class="text-[10px] text-blue-400 underline italic">R2 Reload</button>
+                <h2 class="text-[10px] font-bold text-purple-400 uppercase tracking-widest italic">Workflow Pipeline</h2>
             </div>
-            <textarea id="rssFeeds" class="w-full bg-slate-800 border border-slate-700 p-4 rounded-3xl text-sm h-32 outline-none focus:ring-1 ring-purple-500" placeholder="RSS URLs..."></textarea>
-            <div id="agentList" class="space-y-4"></div>
-            <button onclick="addAgent()" class="w-full py-5 border-2 border-dashed border-slate-700 rounded-3xl text-slate-500 font-bold text-xs active:bg-slate-800">+ エージェント追加</button>
+            
+            <div id="agentList" class="space-y-4">
+                </div>
+            
+            <button onclick="addAgent()" class="w-full py-5 border-2 border-dashed border-slate-700 rounded-3xl text-slate-500 font-bold text-xs active:bg-slate-800">
+                + エージェント追加
+            </button>
         </section>
 
         <div class="fixed bottom-0 left-0 right-0 p-4 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 safe-bottom z-50">
-            <button onclick="saveToR2()" class="w-full bg-gradient-to-r from-red-600 to-rose-600 py-4 rounded-2xl font-black text-lg shadow-2xl active:scale-95">🚀 R2へ保存・即時デプロイ</button>
+            <button onclick="saveToR2()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-4 rounded-2xl font-black text-lg shadow-2xl active:scale-95 transition-transform">
+                🚀 R2へ保存・即時デプロイ
+            </button>
         </div>
     </div>
 
     <script>
+        let rss_feeds = [];
         let workflow = [];
         let availableModels = [];
 
@@ -51,11 +71,10 @@
                 const response = await fetch('models.json');
                 availableModels = await response.json();
             } catch (e) {
-                console.error("Failed to load models.json", e);
                 availableModels = [
-                    { "value": "gpt-4o-mini", "label": "gpt-4o-mini" },
-                    { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" },
-                    { "value": "gemini-2.0-flash-exp", "label": "Gemini 2.0 Flash" }
+                    { "value": "gpt-4o-mini", "label": "GPT-4o Mini" },
+                    { "value": "o3-mini", "label": "o3-mini" },
+                    { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" }
                 ];
             }
         }
@@ -74,57 +93,105 @@
                 const s3 = await getS3();
                 const res = await s3.getObject({ Bucket: window.VAULT.r2Bucket, Key: 'prompts.json' }).promise();
                 const config = JSON.parse(res.Body.toString());
-                document.getElementById('rssFeeds').value = config.rss_feeds.join('\n');
-                workflow = config.workflow;
-                render();
+                
+                rss_feeds = config.rss_feeds || [];
+                workflow = config.workflow || [];
+                
+                renderRss();
+                renderWorkflow();
                 document.getElementById('st').innerText = "Connected";
-            } catch(e) { document.getElementById('st').innerText = "R2 Error"; }
+            } catch(e) { 
+                console.error(e);
+                document.getElementById('st').innerText = "R2 Error"; 
+            }
         }
 
-        function render() {
+        // --- RSS Management ---
+        function renderRss() {
+            const container = document.getElementById('rssList');
+            container.innerHTML = rss_feeds.map((url, i) => `
+                <div class="flex items-center gap-2 bg-slate-800/50 p-2 rounded-xl border border-slate-700">
+                    <input type="text" value="${url}" onchange="rss_feeds[${i}]=this.value" 
+                           class="bg-transparent flex-1 text-xs px-2 outline-none text-slate-300" placeholder="https://...">
+                    <button onclick="rss_feeds.splice(${i},1);renderRss()" class="text-slate-500 hover:text-red-400 px-2">✕</button>
+                </div>
+            `).join('');
+        }
+
+        function addRss() {
+            rss_feeds.push("");
+            renderRss();
+        }
+
+        // --- Workflow Management ---
+        function renderWorkflow() {
             const container = document.getElementById('agentList');
             container.innerHTML = workflow.map((agent, i) => `
                 <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-xl">
                     <div class="flex items-center gap-2 mb-3">
-                        <div class="drag-handle p-2 text-slate-700">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
+                        <div class="drag-handle p-2 text-slate-700 cursor-move">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
                         </div>
-                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-900">
-                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1">
+                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-800">
+                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1 text-slate-300">
                             ${availableModels.map(m => `
                                 <option value="${m.value}" ${agent.model === m.value ? 'selected' : ''}>${m.label}</option>
                             `).join('')}
                         </select>
-                        <button onclick="workflow.splice(${i},1);render()" class="text-slate-600 text-xl ml-2">✕</button>
+                        <button onclick="workflow.splice(${i},1);renderWorkflow()" class="text-slate-600 hover:text-red-400 text-xl ml-2">✕</button>
                     </div>
-                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-300 outline-none focus:ring-1 ring-blue-500">${agent.prompt}</textarea>
+                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-24 text-slate-400 outline-none focus:ring-1 ring-blue-500">${agent.prompt}</textarea>
                 </div>
             `).join('');
 
             new Sortable(container, { handle: '.drag-handle', animation: 250, onEnd: (e) => {
                 const item = workflow.splice(e.oldIndex, 1)[0];
                 workflow.splice(e.newIndex, 0, item);
-                setTimeout(render, 50);
+                // 内部状態のみ更新し、再描画は少し遅らせて自然に見せる
             }});
         }
 
         function addAgent() {
             const defaultModel = availableModels.length > 0 ? availableModels[0].value : 'gpt-4o-mini';
             workflow.push({ id: 'agent_'+Date.now(), model: defaultModel, prompt:'', enabled:true });
-            render();
+            renderWorkflow();
         }
 
+        // --- Save Function ---
         async function saveToR2() {
             try {
+                document.getElementById('st').innerText = "Saving...";
                 const s3 = await getS3();
+                
+                // 空のフィードを除外して保存
+                const cleanRss = rss_feeds.filter(url => url.trim() !== "");
+                
                 const config = { 
-                    rss_feeds: document.getElementById('rssFeeds').value.split('\n').filter(l=>l.trim()), 
-                    workflow, 
-                    settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
+                    rss_feeds: cleanRss, 
+                    workflow: workflow, 
+                    settings: { 
+                        fetch_days: 3, 
+                        score_threshold: 7, 
+                        embedding_model: "text-embedding-3-small", 
+                        similarity_threshold: 0.85 
+                    } 
                 };
-                await s3.putObject({ Bucket: window.VAULT.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();
-                alert('Success: R2 updated');
-            } catch(e) { alert("Save Error"); }
+
+                await s3.putObject({ 
+                    Bucket: window.VAULT.r2Bucket, 
+                    Key: 'prompts.json', 
+                    Body: JSON.stringify(config, null, 2), 
+                    ContentType: 'application/json' 
+                }).promise();
+                
+                document.getElementById('st').innerText = "Saved Successfully";
+                setTimeout(() => document.getElementById('st').innerText = "Connected", 2000);
+                alert('R2への保存が完了しました');
+            } catch(e) { 
+                console.error(e);
+                alert("保存に失敗しました。コンソールを確認してください。");
+                document.getElementById('st').innerText = "Save Error";
+            }
         }
     </script>
 </body>

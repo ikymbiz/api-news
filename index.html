@@ -115,7 +115,11 @@
         let CONFIG = {};
         let rss_feeds = [];
         let workflow = [];
-        let availableModels = []; 
+        // デフォルト値をセットしておくことで、読み込み中も選択肢が表示されるようにする
+        let availableModels = [
+            { "value": "gpt-4o-mini", "label": "GPT-4o Mini" },
+            { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" }
+        ];
         let sortableInstance = null;
 
         window.onload = () => {
@@ -149,17 +153,13 @@
             document.getElementById('st').innerText = "Syncing...";
             const s3 = await getS3();
 
-            // R2からモデルリストを取得
+            // models.json を取得して選択肢を更新
             try {
                 const mRes = await s3.getObject({ Bucket: CONFIG.r2Bucket, Key: 'models.json' }).promise();
                 availableModels = JSON.parse(mRes.Body.toString());
+                console.log("Models updated from R2");
             } catch(e) {
-                console.warn("models.json load failed, using local defaults.");
-                availableModels = [
-                    { "value": "gpt-4o-mini", "label": "GPT-4o Mini" },
-                    { "value": "o3-mini", "label": "o3-mini" },
-                    { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" }
-                ];
+                console.warn("models.json not found in R2. Using defaults.");
             }
 
             await loadFromR2();
@@ -191,7 +191,7 @@
                 );
                 workflow = config.workflow || [];
                 renderRss();
-                renderWorkflow();
+                renderWorkflow(); // ここで availableModels が使われる
                 document.getElementById('st').innerText = "Online";
             } catch(e) { document.getElementById('st').innerText = "R2 Error"; }
         }

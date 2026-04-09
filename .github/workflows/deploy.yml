@@ -1,9 +1,9 @@
-name: Deploy to GitHub Pages
+name: Deploy Dashboard
 
 on:
   push:
-    branches: ["main"]
-  workflow_dispatch:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -12,32 +12,25 @@ permissions:
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create Vault
+      - name: Inject Secrets into index.html
         run: |
-          echo "window.VAULT = {
-            ghToken: '${{ secrets.GH_PAT }}',
-            secKey: '${{ secrets.R2_SECRET_ACCESS_KEY }}',
-            r2Bucket: '${{ secrets.R2_BUCKET_NAME }}',
-            accId: '${{ vars.R2_ACCOUNT_ID }}',
-            keyId: '${{ vars.R2_ACCESS_KEY_ID }}'
-          };" > vault.js
+          sed -i "s/__R2_ACC_ID__/${{ secrets.R2_ACCOUNT_ID }}/g" index.html
+          sed -i "s/__R2_KEY_ID__/${{ secrets.R2_ACCESS_KEY_ID }}/g" index.html
+          sed -i "s/__R2_SEC_KEY__/${{ secrets.R2_SECRET_ACCESS_KEY }}/g" index.html
+          sed -i "s/__R2_BUCKET__/${{ vars.R2_BUCKET_NAME }}/g" index.html
+          sed -i "s/__GH_TOKEN__/${{ secrets.GH_PAT }}/g" index.html
+          sed -i "s/__GH_REPO__/${{ github.repository }}/g" index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
-
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
-
       - name: Deploy to GitHub Pages
-        id: deployment
         uses: actions/deploy-pages@v4

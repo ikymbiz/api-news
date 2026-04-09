@@ -1,27 +1,181 @@
 {
   "rss_feeds": [
-    "https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja"
+    {
+      "name": "金融庁 (日本)",
+      "url": "https://www.fsa.go.jp/en/rss/news.xml"
+    },
+    {
+      "name": "シンガポール金融管理局 (MAS)",
+      "url": "https://www.mas.gov.sg/rss/media-releases"
+    },
+    {
+      "name": "連邦準備制度理事会 (Fed / 米国)",
+      "url": "https://www.federalreserve.gov/feeds/press_all.xml"
+    },
+    {
+      "name": "通貨監督庁 (OCC / 米国)",
+      "url": "https://www.occ.treas.gov/rss/news-releases.xml"
+    },
+    {
+      "name": "証券取引委員会 (SEC / 米国)",
+      "url": "https://www.sec.gov/rss/news/press-releases.xml"
+    },
+    {
+      "name": "欧州中央銀行 (ECB / 銀行監督)",
+      "url": "https://www.bankingsupervision.europa.eu/home/html/rss.en.xml"
+    },
+    {
+      "name": "金融行為規制機構 (FCA / 英国)",
+      "url": "https://www.fca.org.uk/news/rss.xml"
+    },
+    {
+      "name": "日本 AIセーフティ・インスティテュート (AISI)",
+      "url": "https://aisi.go.jp/feed/"
+    },
+    {
+      "name": "英国 AI Safety Institute (UK AISI)",
+      "url": "https://www.gov.uk/government/organisations/ai-safety-institute.atom"
+    },
+    {
+      "name": "米国 NIST (AI関連ニュース)",
+      "url": "https://www.nist.gov/news-events/news/rss.xml"
+    },
+    {
+      "name": "米国 CISA (サイバー安全局)",
+      "url": "https://www.cisa.gov/news.xml"
+    },
+    {
+      "name": "シンガポール IMDA",
+      "url": "https://www.imda.gov.sg/rss/news"
+    },
+    {
+      "name": "JPCERT/CC (日本)",
+      "url": "https://www.jpcert.or.jp/at/index.rss"
+    },
+    {
+      "name": "産総研 (AIST) AI品質マネジメント",
+      "url": "https://www.aist.go.jp/aist_j/new_res/rss.xml"
+    },
+    {
+      "name": "EU AI Act Portal",
+      "url": "https://artificialintelligenceact.eu/feed/"
+    },
+    {
+      "name": "OECD.ai (Policy Observatory)",
+      "url": "https://oecd.ai/en/feed"
+    },
+    {
+      "name": "日本 個人情報保護委員会 (PPC)",
+      "url": "https://www.ppc.go.jp/rss/news.xml"
+    },
+    {
+      "name": "日本 デジタル庁",
+      "url": "https://www.digital.go.jp/news/feed.xml"
+    },
+    {
+      "name": "AI Incident Database (AIID)",
+      "url": "https://incidentdatabase.ai/rss.xml"
+    },
+    {
+      "name": "AVID (AI Vulnerability Database)",
+      "url": "https://avidml.org/feed.xml"
+    },
+    {
+      "name": "arXiv (cs.AI)",
+      "url": "http://rss.arxiv.org/rss/cs.AI"
+    },
+    {
+      "name": "arXiv (cs.CR)",
+      "url": "http://rss.arxiv.org/rss/cs.CR"
+    },
+    {
+      "name": "Import AI (Substack)",
+      "url": "https://importai.substack.com/feed"
+    },
+    {
+      "name": "The Decoder",
+      "url": "https://the-decoder.com/feed/"
+    },
+    {
+      "name": "The Batch (DeepLearning.AI)",
+      "url": "https://www.deeplearning.ai/the-batch/rss/"
+    },
+    {
+      "name": "TechCrunch AI",
+      "url": "https://techcrunch.com/category/artificial-intelligence/feed/"
+    }
   ],
   "workflow": [
     {
       "id": "filter",
-      "model": "gpt-4o-mini",
+      "model": "gemini-2.5-flash",
       "scope": "collection",
-      "prompt": "提供されたニュースのリストに対し、戦争やビジネスや技術における『革新性』と『社会への影響度』の観点から、1-10で厳格に採点してください。結果は必ず以下のJSON形式で返してください。{'items':[{'url':'','score':8}]}",
+      "prompt": "### 役割\nあなたは、AIガバナンス、リスク管理、およびコンプライアンス（GRC）を専門とする**超精鋭シニアエディター**です。\n単なる「AI活用」のニュースではなく、「社会・組織・利用者が直面する法的・技術的リスク」と「遵守すべきガイドライン」に最大の価値を置き、全入力を厳格に査定します。\n\n### ミッション\n入力された全記事に対し、以下の基準でスコアリング、カテゴリ分け、ターゲット選定を行ってください。AIに関連しない記事は「0点」としつつ、監査ログとして全件必ず出力してください。\n\n### スコアリング基準（0-100）\n * 【90-100点】最優先：法的拘束力・重大な脅威\n   - 国際法・国内法の成立、政府ガイドライン、法的判決、著作権侵害の確定。\n   - ゼロデイ脆弱性、AIによる深刻な実被害、大規模な漏洩。\n * 【70-89点】高優先：標準化・倫理적リスク\n   - 業界標準（ISO/NIST等）の策定、倫理的議論、バイアス実証。\n   - 安全性（アライメント）に関する画期的な技術的安全性評価。\n * 【30-69点】中優先：実務・一般プロダクト\n   - 一般的な製品アップデート、AI活用事例。\n * 【10-29点】低優先：投資・市場動向\n   - 資金調達、M&A、時価総額。リスク管理上の価値は低い。\n * 【0点】除外：非AI・ノイズ\n   - AIに直接関係のないニュース、および中身のない宣伝。\n\n### 詳細カテゴリ定義（category）\n1. Gov-International / 2. Gov-Domestic / 3. Legal-Precedent / 4. Risk-Security / 5. Risk-Privacy / 6. Risk-Ethics / 7. Risk-Societal / 8. Safety-Alignment / 9. Tech-General / 10. Biz-Invest / 11. Non-AI/Noise\n\n### ターゲット・フラグ（target_audience）\nCLO-Legal, CISO-Security, DPO-Privacy, AI-Ethics-Committee, Compliance-Auditor, Product-Owner, Strategy-Board, End-User, None(スコア0の場合)\n\n### 出力ルール\n1. 入力されたすべての記事をJSON形式のリストで出力すること。\n2. スコアが0点、またはAIに関連しない記事の場合、`is_target` フィールドを `false` に設定すること。\n3. 処理対象とする記事（スコア1点以上）の場合、`is_target` フィールドを `true` に設定すること。\n\n### 出力形式（JSONのみ）\n{\n  \"items\": [\n    {\n      \"published_at\": \"YYYY/MM/DD HH:mm\",\n      \"title\": \"記事タイトル\",\n      \"source\": \"メディア/情報源名\",\n      \"url\": \"記事URL\",\n      \"score\": 数値,\n      \"is_target\": boolean,\n      \"category\": \"カテゴリ名\",\n      \"target_audience\": [\"フラグ1\", \"フラグ2\"],\n      \"reason\": \"スコアリングの具体的根拠（リスク・ガバナンス面を強調）\"\n    }\n  ]\n}\n",
       "enabled": true
+    },
+    {
+      "id": "true_filter",
+      "type": "filter",
+      "model": "gpt-5.2-pro",
+      "prompt": "",
+      "enabled": true,
+      "scope": "item",
+      "target_key": "is_target",
+      "include": [],
+      "exclude": [
+        "false"
+      ]
+    },
+    {
+      "id": "summary",
+      "type": "agent",
+      "model": "gemini-2.5-flash",
+      "prompt": "### 役割\nあなたは、AIガバナンス、リスク管理、およびコンプライアンス（GRC）を専門とする**超精鋭シニアエディター**です。\n「社会・組織・利用者が直面する法的・技術的リスク」と「遵守すべきガイドライン」に最大の価値を置き、全入力を厳格に査定・要約します。\n\n### ミッション\n入力された記事を分析し、カテゴリ分け、ターゲット選定、タイトルの日本語翻訳、および内容の要約を行ってください。\nAIガバナンスに関連しない、あるいは価値の低い宣伝記事は一律に対象外として判定します。\n\n### 執筆・要約の指針\n1. **タイトルの翻訳**: 日本語として自然で、かつリスク・ガバナンス上の重要性が一目でわかるタイトルに翻訳してください。\n2. **要約の視点**: 「何ができるようになったか」よりも「どのようなリスクがあるか」「どのような規制・基準が関わるか」「管理者が注意すべき点は何か」に焦点を当て、3箇条以内で要約してください。\n3. **重要性の判断**: 以下の要素が含まれるものを優先的に `is_target: true` と判定します。\n   - 法規制（成立・施行・判決）、政府ガイドライン、標準化動向\n   - セキュリティ脆弱性、プライバシー侵害、悪用事例、バイアス実証\n   - 安全性評価（アライメント）、ガードレール技術\n\n### 出力ルール\n1. AIに直接関連しない、またはガバナンス上の価値がない記事は、`is_target` フィールドを `false` に設定すること。\n2. 上記指針に基づき、処理対象とすべき記事は `is_target` フィールドを `true` に設定すること。\n\n### 出力形式（JSONのみ）\n{\n  \"items\": [\n    {\n      \"published_at\": \"YYYY/MM/DD HH:mm\",\n      \"original_title\": \"元の記事タイトル\",\n      \"translated_title\": \"翻訳後の日本語タイトル\",\n      \"url\": \"記事URL\",\n      \"is_target\": boolean,\n      \"category\": \"Gov-International/Gov-Domestic/Legal-Precedent/Risk-Security/Risk-Privacy/Risk-Ethics/Risk-Societal/Safety-Alignment/Tech-General/Biz-Invest/Non-AI/Noise から選択\",\n      \"target_audience\": [\"CLO-Legal\", \"CISO-Security\", \"DPO-Privacy\", \"AI-Ethics-Committee\", \"Compliance-Auditor\", \"Product-Owner\", \"Strategy-Board\", \"End-User\" から複数選択],\n      \"summary\": \"GRCの観点から要約した内容（箇条書き）\",\n      \"reason\": \"ターゲットとして選定（または除外）した具体的根拠\"\n    }\n  ]\n}\n",
+      "enabled": true,
+      "scope": "item"
     },
     {
       "id": "analyst",
       "model": "o3-mini",
       "scope": "item",
-      "prompt": "以下の情報を元に、技術的な背景と将来予測を含めた詳細な日本語レポートを作成してください。",
+      "prompt": "### 役割\nOSINTシニア・リスクアナリスト（技術・安全・サイバー・金融ガバナンス専任）。\n\n### 調査対象（ナレッジベース：最大10件照合）\n事案の性質に応じ、以下の【専門領域】からエビデンスを特定・照合してください。\n\n1. **金融AIガバナンス (Financial AI Governance)**:\n   - **MAS (シンガポール金融管理局)**: FEAT原則, Project MindForge (GenAIリスク), Cosmos (AIガバナンス規格)。\n   - **JFSA (日本金融庁)**: モデル・リスク管理に関する原則, 監督指針。\n   - **OCC (米通貨監督庁) / FRB**: SR 11-7 (Model Risk Management)。\n2. **AI安全性・評価 (AISI / AI Safety Institutes)**:\n   - **日本/英/米 AISI**: 安全性評価フレームワーク, レッドチーミング報告書。\n3. **NIST包括的ガイドライン (NIST Suite)**:\n   - **NIST AI RMF 1.0**, **NIST AI 100シリーズ** (100-1:安全性評価, 100-2:生成AI, 100-5:ガバナンス等)。\n4. **サイバーセキュリティ専門機関 (Cyber Authorities)**:\n   - **CISA (米) / NCSC (英)**: Guidelines for Secure AI System Development。\n   - **JPCERT/CC (日) / ENISA (欧)**: AI脅威分析・脆弱性情報。\n5. **技術的安全性・セキュリティ (Tech Security)**:\n   - **OWASP LLM Top 10**, **MITRE ATLAS** (攻撃手法のマッピング)。\n   - **産総研（AIST）**: AI品質マネジメントガイドライン。\n6. **法規制・知的財産・個人情報**:\n   - EU AI Act, 日本 AI事業者ガイドライン, 文化庁(著作権), PPC(個人情報)。\n7. **インシデント履歴・脆弱性・論文**:\n   - AIID, OECD AIM, AVID, および **arXiv/Google Scholar** (公的文書不在時の技術論文調査)。\n\n### 適用OSINT手法\n1. **Targeted Dorking**: `site:mas.gov.sg`, `site:nist.gov`, `site:fsa.go.jp`, `site:arxiv.org` 等を駆使。\n2. **Multi-Layered Mapping**: ニュースを「金融規制(MAS/JFSA等)」「技術基準(NIST/OWASP)」「安全性評価(AISI)」の多層で照合。\n3. **Evidence-Based Fallback**: 公的指針がない最新の攻撃・リスク事案は、必ずarXiv等の技術論文から根拠を特定。\n\n### ミッション\n特定したエビデンス（最大10件）に基づき、配信向けに以下を執筆してください。\n\n1. **OSINT詳細分析**: \n   - 金融当局の指針、安全性基準、サイバー指針、各国規制を200〜300文字でクロス分析。\n2. **専門家コメント（実務的対策）**:\n   - 組織が取るべき「技術的ガードレール」および「管理策」を150〜200文字で提示。\n\n### 出力形式（JSONのみ）\n{\n  \"deep_dive\": {\n    \"primary_sources\": [\"特定した一次資料・論文・インシデントURL ※最大10件\"],\n    \"evidence_mapping\": {\n      \"financial_mrm\": \"MAS FEAT/MindForge, JFSA, OCC等との照合\",\n      \"safety_and_cyber\": \"AISI/NIST/CISA/OWASP等との照合\",\n      \"legal_ip_privacy\": \"各国の法規制・知的財産・個人情報保護法との照合\"\n    },\n    \"similar_incidents\": [{\"source\": \"AIID/OECD等\", \"id\": \"ID\", \"summary\": \"共通点\"}],\n    \"analysis\": \"OSINT分析：金融・安全性・規制の統合分析（200-300文字）\",\n    \"expert_comment\": \"実務アドバイス：多角的なリスク評価と具体的初動対策（150-200文字）\",\n    \"osint_method_used\": \"使用した手法と主要ターゲットドメイン\",\n    \"related_links\": [\"重要資料URL（最大5件）\"]\n  }\n}\n",
       "enabled": true
+    },
+    {
+      "id": "agent_json",
+      "model": "gemini-2.5-flash",
+      "prompt": "## 役割\nあなたは高度な情報分析エキスパートです。\n提供されたニュース記事のタイトルと本文を読み解き、以下の制約条件を厳守して構造化データ（JSON）を出力してください。\n\n## 制約条件\n1. 出力は必ず以下のJSON形式のみとしてください。\n2. JSON以外の説明文、挨拶、前置きは一切含めないでください（純粋なJSONのみを出力）。\n3. 日本語タイトル（title_jp）は、元の意味を損なわず、読者の目を引く簡潔なものにしてください。\n4. 日時（date）は、記事内から読み取れる「発信日時」を優先し、不明な場合は現在の時刻を yyyy-mm-dd hh:nn 形式で記述してください。\n5. 関連情報（related）は、本文中にリンクや具体的な参照先がある場合はそれを、ない場合は関連するトピックのキーワードをURL形式、あるいは名称で複数挙げてください。\n\n## 出力フォーマット\n{\n  \"title_jp\": \"記事の内容を端的に表す日本語タイトル\",\n  \"date\": \"yyyy-mm-dd hh:nn\",\n  \"source\": \"メディア名やニュースの配信元\",\n  \"summary\": \"内容を3行程度で要約した文章\",\n  \"related\": \"本文から抽出した関連リンクや情報のリスト（複数ある場合は改行やカンマで区切る）\",\n  \"analysis\": \"このニュースが業界や社会に与える影響や、背景にある意図などの専門的分析\",\n  \"tags\": [\"キーワード1\", \"キーワード2\", \"キーワード3\"]\n}",
+      "enabled": true,
+      "scope": "item"
     }
   ],
   "settings": {
     "fetch_days": 3,
     "score_threshold": 7,
     "embedding_model": "text-embedding-3-small",
-    "similarity_threshold": 0.85
+    "similarity_threshold": 0.85,
+    "filter_keywords": {
+      "include": [
+        "Regulation",
+        "Compliance",
+        "Vulnerability",
+        "Jailbreak",
+        "Hallucination",
+        "MAS FEAT",
+        "Project MindForge",
+        "NIST AI RMF",
+        "SR 11-7",
+        "EU AI Act Compliance",
+        "AISI Audit"
+      ],
+      "exclude": [
+        "Funding",
+        "Hiring",
+        "Marketing",
+        "Promotion",
+        "Series A/B",
+        "Startup news"
+      ]
+    }
   }
 }

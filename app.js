@@ -27,8 +27,6 @@ async function run() {
 
   const askAI = async (model, systemPrompt, userContent) => {
     const m = model.toLowerCase();
-    
-    // モデル名に含まれるキーワードでプロバイダーを自動判別
     if (m.includes('gpt') || m.startsWith('o1') || m.startsWith('o3')) {
       const res = await openai.chat.completions.create({
         model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }]
@@ -72,22 +70,43 @@ async function run() {
   if (pending.length === 0) return console.log("No new articles.");
 
   let targets = pending;
+
+  // --- Collection Scope: チャンク化して一括判定 (変更箇所) ---
   const collectionSteps = config.workflow.filter(s => s.enabled && s.scope === 'collection');
-  
+  const CHUNK_SIZE = settings.chunk_size || 20;
+
   for (const step of collectionSteps) {
     try {
-      console.log(`\n>> Batch Processing: [${step.id}] Model: ${step.model}`);
-      const batchRes = await askAI(
-        step.model, 
-        step.prompt + " Output MUST be JSON format: {items:[{url,score}]}", 
-        JSON.stringify(targets.map(p => ({ t: p.title, u: p.link })))
-      );
-      const jsonMatch = batchRes.match(/\{.*\}/s);
-      const scores = JSON.parse(jsonMatch ? jsonMatch[0] : batchRes).items || [];
-      targets = targets.filter(p => (scores.find(s => s.url === p.link)?.score || 0) >= settings.score_threshold);
+      console.log(`\n>> Batch Processing: [${step.id}] Model: ${step.model} (Chunk Size: ${CHUNK_SIZE})`);
+      let allScoredItems = [];
+
+      for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
+        const chunk = targets.slice(i, i + CHUNK_SIZE);
+        console.log(`   Processing chunk: ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(targets.length / CHUNK_SIZE)} (${chunk.length} items)`);
+
+        try {
+          const batchRes = await askAI(
+            step.model, 
+            step.prompt + " Output MUST be JSON format: {items:[{url,score}]}", 
+            JSON.stringify(chunk.map(p => ({ t: p.title, u: p.link })))
+          );
+          const jsonMatch = batchRes.match(/\{.*\}/s);
+          const scores = JSON.parse(jsonMatch ? jsonMatch[0] : batchRes).items || [];
+          allScoredItems.push(...scores);
+        } catch (e) {
+          logError("CollectionChunk", step.id, e.message);
+        }
+      }
+
+      targets = targets.filter(p => {
+        const scored = allScoredItems.find(s => s.url === p.link);
+        return (scored?.score || 0) >= settings.score_threshold;
+      });
+      console.log(`>> Filtered: ${targets.length} articles remaining.`);
     } catch (e) { logError("CollectionStep", step.id, e.message); }
   }
 
+  // --- Item Scope: 以降は変更なし ---
   const apiOutput = [];
   for (const article of targets) {
     try {

@@ -172,10 +172,16 @@
 
             container.innerHTML = workflow.map((agent, i) => `
                 <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-xl mb-4">
-                    <div class="flex items-center gap-2 mb-3">
+                    <div class="flex items-center gap-2 mb-3 flex-wrap">
                         <div class="drag-handle p-2 text-slate-700 hover:text-blue-500">☰</div>
                         <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-900">
-                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1 text-slate-300">
+                        
+                        <select onchange="workflow[${i}].scope=this.value" class="bg-slate-800 text-[9px] px-2 py-1 rounded-lg font-bold text-purple-300 outline-none">
+                            <option value="item" ${agent.scope === 'item' ? 'selected' : ''}>Individual</option>
+                            <option value="collection" ${agent.scope === 'collection' ? 'selected' : ''}>Batch</option>
+                        </select>
+
+                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1 text-slate-300 min-w-[100px]">
                             ${availableModels.map(m => `<option value="${m.value}" ${agent.model === m.value ? 'selected' : ''}>${m.label}</option>`).join('')}
                         </select>
                         <button onclick="workflow.splice(${i},1);renderWorkflow()" class="text-slate-600 text-xl ml-2">✕</button>
@@ -194,7 +200,7 @@
         }
 
         function addAgent() {
-            workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0].value, prompt:'', enabled:true });
+            workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0].value, prompt:'', enabled:true, scope: 'item' });
             renderWorkflow();
         }
 

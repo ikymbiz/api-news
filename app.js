@@ -15,7 +15,12 @@ async function run() {
   };
 
   const configStr = await r2.download('prompts.json');
-  if (!configStr) throw new Error("Config not found on R2.");
+  if (!configStr) {
+    logError("Config", "prompts.json is missing on R2.");
+    await saveLogs(errorLogs);
+    throw new Error("Critical: No prompts.json found.");
+  }
+  
   const config = JSON.parse(configStr);
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const parser = new Parser();
@@ -36,9 +41,12 @@ async function run() {
   const vectorDb = JSON.parse(await r2.download('vectors.json') || "[]");
   const pending = allItems.filter(i => !db.some(d => d.link === i.link));
 
-  if (pending.length === 0) return console.log("No new articles.");
+  if (pending.length === 0) {
+    console.log("=== No New Articles ===");
+    await saveLogs(errorLogs);
+    return;
+  }
 
-  // 1. Filter
   const filterStep = config.workflow.find(s => s.id === 'filter' && s.enabled);
   let targets = pending;
   if (filterStep) {
@@ -56,7 +64,6 @@ async function run() {
     } catch (e) { logError("Filter", "AI Error", e.message); }
   }
 
-  // 2. Process
   const apiOutput = [];
   for (const article of targets) {
     try {
@@ -70,17 +77,17 @@ async function run() {
         });
         const html = await res.text();
         const doc = new JSDOM(html, { url: article.link });
-        bodyText = (new Readability(doc.window.document)).parse()?.textContent.trim().substring(0, 8000) || "";
+        bodyText = (new Readability(doc.window.document)).parse()?.textContent.trim().substring(0, 10000) || "";
       } catch (e) {
         logError("Scraping", article.title, "Fallback to snippet.");
       }
 
-      // 本文が空でもSKIPせず、タイトルとRSSの要約で続行
-      const finalContent = bodyText || article.contentSnippet || article.content || "本文取得不可";
+      // 修正：本文取得に失敗してもSKIPせず続行
+      const finalContent = bodyText || article.contentSnippet || article.content || "No content available.";
 
       const emb = await openai.embeddings.create({ model: settings.embedding_model, input: article.title });
       const vec = emb.data[0].embedding;
-      if (vectorDb.some(v => cosineSimilarity(vec, v.vec) > settings.similarity_threshold)) continue;
+      if (vectorDb.some(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85))) continue;
 
       let currentContext = `Title: ${article.title}\nContent: ${finalContent}`;
       for (const step of config.workflow) {
@@ -92,7 +99,7 @@ async function run() {
         currentContext = aiRes.choices[0].message.content;
       }
 
-      apiOutput.push({ title: article.title, link: article.link, analysis: currentContext });
+      apiOutput.push({ title: article.title, link: article.link, analysis: currentContext, date: new Date().toISOString() });
       db.push({ link: article.link, date: new Date().toISOString() });
       vectorDb.push({ link: article.link, vec });
     } catch (e) { logError("Chain", article.title, e.message); }
@@ -104,11 +111,14 @@ async function run() {
     await r2.upload('vectors.json', JSON.stringify(vectorDb.slice(-500)), 'application/json');
   }
   await saveLogs(errorLogs);
+  console.log("=== SUCCESS ===");
 }
 
 async function saveLogs(logs) {
-  const old = JSON.parse(await r2.download('error_log.json') || "[]");
-  await r2.upload('error_log.json', JSON.stringify([...logs, ...old].slice(0, 100), null, 2), 'application/json');
+  try {
+    const old = JSON.parse(await r2.download('error_log.json') || "[]");
+    await r2.upload('error_log.json', JSON.stringify([...logs, ...old].slice(0, 100), null, 2), 'application/json');
+  } catch (e) { console.error("Log failed", e); }
 }
 
 run().catch(console.error);

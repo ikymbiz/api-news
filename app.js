@@ -16,7 +16,6 @@ async function run() {
     console.error(`[${context}] ${message}`);
   };
 
-  // r2.download 内部で process.env.R2_BUCKET_NAME を参照するように実装してください
   const configStr = await r2.download('prompts.json');
   if (!configStr) throw new Error("prompts.json missing.");
   const config = JSON.parse(configStr);
@@ -27,27 +26,32 @@ async function run() {
   const googleAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
   const askAI = async (model, systemPrompt, userContent) => {
-    if (model.startsWith('gpt') || model.startsWith('o3')) {
+    const m = model.toLowerCase();
+    
+    // OpenAI系 (GPTシリーズ, o1, o3)
+    if (m.includes('gpt') || m.startsWith('o1') || m.startsWith('o3')) {
       const res = await openai.chat.completions.create({
         model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }]
       });
       return res.choices[0].message.content;
     } 
-    else if (model.startsWith('claude')) {
+    // Anthropic系 (Claudeシリーズ)
+    else if (m.includes('claude')) {
       const res = await anthropic.messages.create({
         model, max_tokens: 4096, system: systemPrompt,
         messages: [{ role: "user", content: userContent }]
       });
       return res.content[0].text;
     } 
-    else if (model.startsWith('gemini')) {
+    // Google系 (Geminiシリーズ)
+    else if (m.includes('gemini')) {
       const genModel = googleAI.getGenerativeModel({ model });
       const res = await genModel.generateContent({
         contents: [{ role: 'user', parts: [{ text: `System Instruction: ${systemPrompt}\n\nUser: ${userContent}` }] }]
       });
       return res.response.text();
     }
-    throw new Error(`Unknown model: ${model}`);
+    throw new Error(`Unknown provider for model: ${model}`);
   };
 
   let allItems = [];
@@ -56,9 +60,9 @@ async function run() {
   cutoff.setDate(cutoff.getDate() - (settings.fetch_days || 3));
   for (const url of config.rss_feeds) {
     try {
-      const feed = await parser.parseURL(url);
+      const feed = await parser.parseURL(url.url || url);
       allItems.push(...feed.items.filter(i => new Date(i.pubDate) > cutoff));
-    } catch (e) { logError("RSS", url, e.message); }
+    } catch (e) { logError("RSS", url.url || url, e.message); }
   }
 
   const db = JSON.parse(await r2.download('articles_db.json') || "[]");
@@ -67,7 +71,6 @@ async function run() {
 
   if (pending.length === 0) return console.log("No new articles.");
 
-  // 全体に対して処理するステップ (scope: 'collection') の実行
   let targets = pending;
   const collectionSteps = config.workflow.filter(s => s.enabled && s.scope === 'collection');
   
@@ -81,7 +84,6 @@ async function run() {
       );
       const jsonMatch = batchRes.match(/\{.*\}/s);
       const scores = JSON.parse(jsonMatch ? jsonMatch[0] : batchRes).items || [];
-      // スコアに基づいてフィルタリング
       targets = targets.filter(p => (scores.find(s => s.url === p.link)?.score || 0) >= settings.score_threshold);
     } catch (e) { logError("CollectionStep", step.id, e.message); }
   }
@@ -105,7 +107,6 @@ async function run() {
 
       let currentContext = `Title: ${article.title}\nContent: ${finalContent}`;
       
-      // 個別に対して処理するステップ (scope: 'item') の実行
       for (const step of config.workflow) {
         if (!step.enabled || step.scope !== 'item') continue;
         console.log(`   Agent: [${step.id}] Model: ${step.model}`);
@@ -119,7 +120,9 @@ async function run() {
   }
 
   if (apiOutput.length > 0) {
-    await r2.upload('api_output.json', JSON.stringify(apiOutput, null, 2), 'application/json');
+    const existingOutput = JSON.parse(await r2.download('api_output.json') || "[]");
+    const mergedOutput = [...apiOutput, ...existingOutput].slice(0, 50);
+    await r2.upload('api_output.json', JSON.stringify(mergedOutput, null, 2), 'application/json');
     await r2.upload('articles_db.json', JSON.stringify(db.slice(-1000)), 'application/json');
     await r2.upload('vectors.json', JSON.stringify(vectorDb.slice(-500)), 'application/json');
   }

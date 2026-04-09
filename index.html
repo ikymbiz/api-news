@@ -1,84 +1,142 @@
-<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>Agent Control v2.0</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/@aws-sdk/client-s3@3.712.0/dist-browser/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>input, textarea, select { background: #0f172a !important; border: 1px solid #1e293b !important; color: white !important; }</style></head>
-<body class="bg-slate-950 text-slate-200 p-4 md:p-8 font-sans"><div class="max-w-7xl mx-auto space-y-6">
-    <header class="flex justify-between items-center border-b border-slate-800 pb-6">
-        <h1 class="text-2xl font-black text-blue-500">INTELLIGENCE CONTROL v2.0</h1>
-        <div class="flex gap-2">
-            <input type="password" id="masterPass" placeholder="Master PW" class="p-2 rounded text-xs w-32 outline-none focus:ring-1 ring-blue-500">
-            <button onclick="saveLocal()" class="bg-slate-800 p-2 rounded text-[10px]">🔑 記憶</button>
-            <button onclick="loadLocal()" class="bg-slate-800 p-2 rounded text-[10px]">🔓 復元</button>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Orchestrator UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8 text-blue-400">Agent Orchestrator</h1>
+
+        <div class="grid grid-cols-2 gap-4 mb-8 bg-gray-800 p-6 rounded-lg border border-gray-700">
+            <input id="accId" type="text" placeholder="R2 Account ID" class="bg-gray-700 p-2 rounded">
+            <input id="keyId" type="text" placeholder="Access Key ID" class="bg-gray-700 p-2 rounded">
+            <input id="secKey" type="password" placeholder="Secret Access Key" class="bg-gray-700 p-2 rounded col-span-2">
+            <div class="col-span-2 flex gap-2">
+                <button onclick="saveKeys()" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded">🔑 認証情報を保存</button>
+                <button onclick="loadFromR2()" class="bg-green-600 hover:bg-green-500 px-4 py-2 rounded">📥 R2から読込</button>
+            </div>
         </div>
-    </header>
-    <div class="grid lg:grid-cols-12 gap-6">
-        <aside class="lg:col-span-3 space-y-4">
-            <div class="bg-slate-900/50 p-5 rounded-2xl border border-slate-800 space-y-4">
-                <input type="password" id="accountID" placeholder="R2 Account ID" class="w-full p-2 rounded text-xs">
-                <input type="password" id="ak" placeholder="R2 Access Key" class="w-full p-2 rounded text-xs">
-                <input type="password" id="sk" placeholder="R2 Secret Key" class="w-full p-2 rounded text-xs">
-                <div class="grid grid-cols-2 gap-2">
-                    <button onclick="pull()" class="bg-white text-slate-900 rounded p-2 text-xs font-bold">R2読込</button>
-                    <button onclick="push()" class="bg-blue-600 text-white rounded p-2 text-xs font-bold">R2保存</button>
-                </div>
+
+        <div class="bg-gray-800 p-6 rounded-lg mb-8 border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4 text-green-400">基本設定 (RSS / Threshold)</h2>
+            <textarea id="rssFeeds" placeholder="RSSフィードURL（1行に1つ）" class="w-full bg-gray-700 p-2 rounded h-24 mb-4"></textarea>
+            <div class="grid grid-cols-2 gap-4">
+                <input id="threshold" type="number" placeholder="スコア閾値 (例: 7)" class="bg-gray-700 p-2 rounded">
+                <input id="days" type="number" placeholder="遡る日数 (例: 3)" class="bg-gray-700 p-2 rounded">
             </div>
-            <div class="bg-slate-900/30 p-4 rounded-xl border border-slate-800">
-                <h3 class="text-xs font-bold mb-2">RSS Sources</h3>
-                <div id="rssList" class="space-y-1 mb-3"></div>
-                <div class="flex gap-1"><input type="text" id="newRss" class="flex-1 p-1 rounded text-[10px]"><button onclick="addRss()" class="bg-slate-700 px-2 rounded text-[10px]">+</button></div>
+        </div>
+
+        <div id="agentList" class="space-y-4 mb-8">
+            <h2 class="text-xl font-semibold text-purple-400">エージェント・パイプライン</h2>
             </div>
-        </aside>
-        <main class="lg:col-span-6 space-y-4">
-            <div id="pipeline" class="space-y-3"></div>
-        </main>
-        <aside class="lg:col-span-3 space-y-4">
-            <div class="bg-slate-900/50 p-5 rounded-2xl border border-slate-800">
-                <h3 class="text-xs font-bold mb-2">Analysis</h3>
-                <canvas id="distChart"></canvas>
-            </div>
-        </aside>
+
+        <div class="flex gap-4">
+            <button onclick="addAgent()" class="bg-purple-600 hover:bg-purple-500 px-6 py-3 rounded-full font-bold">+ エージェント追加</button>
+            <button onclick="saveToR2()" class="bg-red-600 hover:bg-red-500 px-8 py-3 rounded-full font-bold ml-auto text-xl">🚀 R2へ設定を保存</button>
+        </div>
     </div>
-</div>
-<script>
-let state = { rss_feeds: [], workflow: [], settings: {} };
-const { S3Client, PutObjectCommand, GetObjectCommand } = window["@aws-sdk/client-s3"];
-function render() {
-    const rssEl = document.getElementById('rssList');
-    rssEl.innerHTML = (state.rss_feeds || []).map((u, i) => `
-        <div class="flex justify-between bg-black/40 p-1 rounded text-[9px] border border-slate-800">
-            <span class="truncate w-40">${u}</span>
-            <button onclick="removeRss(${i})" class="text-red-500">×</button>
-        </div>`).join('');
-    const pipe = document.getElementById('pipeline');
-    pipe.innerHTML = (state.workflow || []).map((a, i) => `
-        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 flex gap-4 items-center ${a.enabled ? '' : 'opacity-40'}" data-id="${i}">
-            <div class="handle cursor-grab text-slate-600">☰</div>
-            <input type="checkbox" ${a.enabled ? 'checked' : ''} onchange="toggleAgent(${i})" class="w-4 h-4">
-            <div class="flex-1 min-w-0">
-                <div class="flex justify-between mb-1"><span class="text-[10px] font-bold text-blue-400">${a.id}</span><input type="text" value="${a.model}" onchange="updateAgent(${i},'model',this.value)" class="text-[9px] p-0.5 rounded w-20"></div>
-                <textarea onchange="updateAgent(${i},'prompt',this.value)" class="w-full h-16 p-1 rounded text-[10px] font-mono">${a.prompt}</textarea>
-            </div>
-        </div>`).join('');
-    Sortable.create(pipe, { handle: '.handle', animation: 150, onEnd: (e) => { const item = state.workflow.splice(e.oldIndex, 1)[0]; state.workflow.splice(e.newIndex, 0, item); }});
-}
-function updateAgent(i,k,v){state.workflow[i][k]=v;}
-function toggleAgent(i){state.workflow[i].enabled=!state.workflow[i].enabled;render();}
-function addRss(){const el=document.getElementById('newRss');if(el.value){state.rss_feeds.push(el.value);el.value='';render();}}
-function removeRss(i){state.rss_feeds.splice(i,1);render();}
-function getS3(){return new S3Client({region:"auto",endpoint:`https://${document.getElementById('accountID').value}.r2.cloudflarestorage.com`,credentials:{accessKeyId:document.getElementById('ak').value,secretAccessKey:document.getElementById('sk').value}});}
-async function pull() {
-    const res = await getS3().send(new GetObjectCommand({ Bucket: "rss-reports", Key: "prompts.json" }));
-    state = JSON.parse(await res.Body.transformToString());
-    render();
-}
-async function push() {
-    await getS3().send(new PutObjectCommand({ Bucket: "rss-reports", Key: "prompts.json", Body: JSON.stringify(state, null, 2), ContentType: "application/json" }));
-    alert("Saved.");
-}
-async function deriveKey(p, s) { const b = await crypto.subtle.importKey("raw", new TextEncoder().encode(p), "PBKDF2", false, ["deriveKey"]); return crypto.subtle.deriveKey({ name: "PBKDF2", salt: s, iterations: 100000, hash: "SHA-256" }, b, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]); }
-async function saveLocal() { const p = document.getElementById('masterPass').value; if(!p) return alert("PW必須"); const d = JSON.stringify({ ak: document.getElementById('ak').value, sk: document.getElementById('sk').value, aid: document.getElementById('accountID').value }); const s = crypto.getRandomValues(new Uint8Array(16)); const iv = crypto.getRandomValues(new Uint8Array(12)); const k = await deriveKey(p, s); const b = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, k, new TextEncoder().encode(d)); const db = await openDB(); await db.transaction("vault", "readwrite").objectStore("vault").put({ id: "r2", salt: s, iv, blob: b }); alert("Saved."); }
-async function loadLocal() { const p = document.getElementById('masterPass').value; const db = await openDB(); const entry = await new Promise(r => { const req = db.transaction("vault").objectStore("vault").get("r2"); req.onsuccess = () => r(req.result); }); if(!entry) return; try { const k = await deriveKey(p, entry.salt); const dec = await crypto.subtle.decrypt({ name: "AES-GCM", iv: entry.iv }, k, entry.blob); const data = JSON.parse(new TextDecoder().decode(dec)); document.getElementById('ak').value = data.ak; document.getElementById('sk').value = data.sk; document.getElementById('accountID').value = data.aid; } catch(e) { alert("Fail"); } }
-function openDB() { return new Promise(res => { const req = indexedDB.open("AgentVault", 1); req.onupgradeneeded = () => req.result.createObjectStore("vault", { keyPath: "id" }); req.onsuccess = () => res(req.result); }); }
-</script></body></html>
+
+    <script>
+        let workflow = [];
+
+        function addAgent(data = { id: 'new_agent', model: 'gpt-4o-mini', prompt: '', enabled: true }) {
+            const index = workflow.length;
+            workflow.push(data);
+            render();
+        }
+
+        function render() {
+            const container = document.getElementById('agentList');
+            container.innerHTML = workflow.map((agent, i) => `
+                <div class="bg-gray-800 p-6 rounded-lg border-l-8 ${agent.id === 'filter' ? 'border-blue-500' : 'border-purple-500'} relative">
+                    <div class="flex justify-between items-start mb-4">
+                        <input value="${agent.id}" onchange="update(${i}, 'id', this.value)" class="bg-transparent text-xl font-bold focus:outline-none">
+                        <div class="space-x-2 text-sm">
+                            <button onclick="move(${i}, -1)" class="text-gray-400 hover:text-white">▲ 上へ</button>
+                            <button onclick="move(${i}, 1)" class="text-gray-400 hover:text-white">▼ 下へ</button>
+                            <button onclick="remove(${i})" class="text-red-500 hover:text-red-400">✖ 削除</button>
+                        </div>
+                    </div>
+                    <select onchange="update(${i}, 'model', this.value)" class="bg-gray-700 p-1 rounded mb-2 w-full">
+                        <option value="gpt-4o-mini" ${agent.model === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini (高速・安価)</option>
+                        <option value="o3-mini" ${agent.model === 'o3-mini' ? 'selected' : ''}>o3-mini (高度な推論)</option>
+                    </select>
+                    <textarea onchange="update(${i}, 'prompt', this.value)" placeholder="プロンプトを入力..." class="w-full bg-gray-700 p-2 rounded h-24">${agent.prompt}</textarea>
+                </div>
+            `).join('');
+        }
+
+        function update(i, key, val) { workflow[i][key] = val; }
+        function remove(i) { workflow.splice(i, 1); render(); }
+        function move(i, dir) {
+            if (i + dir < 0 || i + dir >= workflow.length) return;
+            [workflow[i], workflow[i+dir]] = [workflow[i+dir], workflow[i]];
+            render();
+        }
+
+        function saveKeys() {
+            localStorage.setItem('r2_creds', JSON.stringify({
+                accId: document.getElementById('accId').value,
+                keyId: document.getElementById('keyId').value,
+                secKey: document.getElementById('secKey').value
+            }));
+            alert('認証情報を保存しました（ローカル）');
+        }
+
+        async function getS3() {
+            const creds = JSON.parse(localStorage.getItem('r2_creds'));
+            return new AWS.S3({
+                endpoint: `https://${creds.accId}.r2.cloudflarestorage.com`,
+                accessKeyId: creds.keyId,
+                secretAccessKey: creds.secKey,
+                signatureVersion: 'v4',
+                region: 'auto'
+            });
+        }
+
+        async function loadFromR2() {
+            const s3 = await getS3();
+            const res = await s3.getObject({ Bucket: 'rss-reports', Key: 'prompts.json' }).promise();
+            const config = JSON.parse(res.Body.toString());
+            document.getElementById('rssFeeds').value = config.rss_feeds.join('\n');
+            document.getElementById('threshold').value = config.settings.score_threshold;
+            document.getElementById('days').value = config.settings.fetch_days;
+            workflow = config.workflow;
+            render();
+        }
+
+        async function saveToR2() {
+            const config = {
+                rss_feeds: document.getElementById('rssFeeds').value.split('\n').filter(l => l.trim()),
+                workflow: workflow,
+                settings: {
+                    fetch_days: parseInt(document.getElementById('days').value),
+                    score_threshold: parseInt(document.getElementById('threshold').value),
+                    embedding_model: "text-embedding-3-small",
+                    similarity_threshold: 0.85
+                }
+            };
+            const s3 = await getS3();
+            await s3.putObject({
+                Bucket: 'rss-reports',
+                Key: 'prompts.json',
+                Body: JSON.stringify(config, null, 2),
+                ContentType: 'application/json'
+            }).promise();
+            alert('R2への保存が完了しました！Actionsを実行してください。');
+        }
+
+        // 初期ロード
+        const saved = JSON.parse(localStorage.getItem('r2_creds'));
+        if (saved) {
+            document.getElementById('accId').value = saved.accId;
+            document.getElementById('keyId').value = saved.keyId;
+            document.getElementById('secKey').value = saved.secKey;
+        }
+    </script>
+</body>
+</html>

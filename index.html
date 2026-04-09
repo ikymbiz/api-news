@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Orchestrator v3.2 - Secure</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
         .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 80px); }
@@ -115,7 +115,7 @@
         let CONFIG = {};
         let rss_feeds = [];
         let workflow = [];
-        let availableModels = []; // 空にして、起動時にR2から取得する
+        let availableModels = []; 
         let sortableInstance = null;
 
         window.onload = () => {
@@ -149,15 +149,16 @@
             document.getElementById('st').innerText = "Syncing...";
             const s3 = await getS3();
 
-            // --- 変更箇所: models.json を R2 から取得 ---
+            // R2からモデルリストを取得
             try {
-                const modelRes = await s3.getObject({ Bucket: CONFIG.r2Bucket, Key: 'models.json' }).promise();
-                availableModels = JSON.parse(modelRes.Body.toString());
+                const mRes = await s3.getObject({ Bucket: CONFIG.r2Bucket, Key: 'models.json' }).promise();
+                availableModels = JSON.parse(mRes.Body.toString());
             } catch(e) {
-                console.warn("models.json not found in R2. Using fallback models.");
+                console.warn("models.json load failed, using local defaults.");
                 availableModels = [
-                    { "value": "gpt-4o-mini", "label": "GPT-4o Mini (Fallback)" },
-                    { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 (Fallback)" }
+                    { "value": "gpt-4o-mini", "label": "GPT-4o Mini" },
+                    { "value": "o3-mini", "label": "o3-mini" },
+                    { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" }
                 ];
             }
 
@@ -261,7 +262,7 @@
         }
 
         function addAgent() {
-            workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0]?.value || '', prompt:'', enabled:true, scope: 'item' });
+            workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0]?.value || 'gpt-4o-mini', prompt:'', enabled:true, scope: 'item' });
             renderWorkflow();
         }
 

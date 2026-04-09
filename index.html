@@ -237,6 +237,7 @@
         function renderWorkflow() {
             const container = document.getElementById('agentList');
             if (sortableInstance) sortableInstance.destroy();
+            
             container.innerHTML = workflow.map((agent, i) => {
                 const isFilter = agent.type === 'filter';
                 return `
@@ -285,13 +286,13 @@
                             </div>
                             <div>
                                 <label class="text-[9px] text-slate-500 uppercase font-bold ml-1">Include (comma separated)</label>
-                                <input type="text" placeholder="AI, Tech, Tool" value="${Array.isArray(agent.include) ? agent.include.join(',') : (agent.include || '')}" 
+                                <input type="text" placeholder="AI, Tech, Tool" value="${Array.isArray(agent.include) ? agent.include.join(', ') : (agent.include || '')}" 
                                        onchange="workflow[${i}].include=this.value" 
                                        class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-emerald-300 outline-none">
                             </div>
                             <div>
                                 <label class="text-[9px] text-slate-500 uppercase font-bold ml-1">Exclude (comma separated)</label>
-                                <input type="text" placeholder="PR, AD, Camp" value="${Array.isArray(agent.exclude) ? agent.exclude.join(',') : (agent.exclude || '')}" 
+                                <input type="text" placeholder="PR, AD, Camp" value="${Array.isArray(agent.exclude) ? agent.exclude.join(', ') : (agent.exclude || '')}" 
                                        onchange="workflow[${i}].exclude=this.value" 
                                        class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-red-300 outline-none">
                             </div>
@@ -307,6 +308,8 @@
                 onEnd: (e) => {
                     const movedItem = workflow.splice(e.oldIndex, 1)[0];
                     workflow.splice(e.newIndex, 0, movedItem);
+                    // 並び替え後にDOMのインデックス(i)を再計算させるために再描画
+                    renderWorkflow();
                 }
             });
         }
@@ -328,9 +331,58 @@
                 document.getElementById('st').innerText = "Syncing...";
                 const s3 = await getS3();
                 
-                // 保存用にデータを整形（include/excludeを配列に変換）
+                // 保存用にデータを整形（include/excludeを配列に変換し、空文字を排除）
                 const formattedWorkflow = workflow.map(step => {
                     if (step.type === 'filter') {
                         return {
                             ...step,
-                            include: typeof step.include === 'string' ? step.include.split(',').map(s => s.trim()).filter(s => s) : (step.include |
+                            include: typeof step.include === 'string' 
+                                ? step.include.split(',').map(s => s.trim()).filter(s => s) 
+                                : (step.include || []),
+                            exclude: typeof step.exclude === 'string' 
+                                ? step.exclude.split(',').map(s => s.trim()).filter(s => s) 
+                                : (step.exclude || [])
+                        };
+                    }
+                    return step;
+                });
+
+                // 整形したデータをグローバル変数にも反映させて状態を同期する
+                workflow = formattedWorkflow;
+
+                const config = { 
+                    rss_feeds: rss_feeds.filter(f => f.url.trim()), 
+                    workflow: workflow, // 同期した変数を保存
+                    settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
+                };
+                
+                await s3.putObject({ Bucket: CONFIG.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();
+                document.getElementById('st').innerText = "Online";
+                renderWorkflow(); // UIを最新の状態に更新
+                alert('Saved to R2');
+            } catch(e) { alert("Save Error: " + e.message); }
+        }
+
+        async function triggerRun() {
+            if (!confirm('Start Orchestrator?')) return;
+            try {
+                document.getElementById('st').innerText = "Dispatching...";
+                const response = await fetch(`https://api.github.com/repos/${CONFIG.ghRepo}/dispatches`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${CONFIG.ghToken}`,
+                        'Accept': 'application/vnd.github+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ event_type: 'manual_trigger' })
+                });
+                if (response.ok) {
+                    alert('GitHub Action triggered');
+                    document.getElementById('st').innerText = "Running";
+                } else { throw new Error('API Error'); }
+            } catch(e) { alert(`Error: ${e.message}`); }
+            finally { setTimeout(() => { document.getElementById('st').innerText = "Online"; }, 3000); }
+        }
+    </script>
+</body>
+</html>

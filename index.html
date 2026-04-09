@@ -3,53 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Multi-AI Orchestrator v2.8</title>
+    <title>Orchestrator v3.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="vault.js"></script>
-    <style> .safe-bottom { padding-bottom: env(safe-area-inset-bottom); } </style>
+    <style>
+        .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 80px); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .active-tab { color: #60a5fa; border-top: 2px solid #60a5fa; background: #1e293b; }
+    </style>
 </head>
-<body class="bg-slate-900 text-slate-100 select-none pb-32">
-    <div class="max-w-xl mx-auto p-4">
+<body class="bg-slate-900 text-slate-100 select-none pb-20">
+    <div class="max-w-xl mx-auto p-4 safe-bottom">
         <header class="flex justify-between items-center mb-6">
-            <h1 class="text-xl font-black text-blue-400 italic">ORCHESTRATOR</h1>
-            <span id="st" class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Initialising</span>
+            <h1 class="text-xl font-black text-blue-400 italic tracking-tighter">ORCHESTRATOR v3</h1>
+            <span id="st" class="text-[10px] font-mono text-slate-500 uppercase">Initialising</span>
         </header>
 
-        <section class="space-y-4 mb-10">
-            <div class="flex justify-between items-end px-2">
-                <h2 class="text-[10px] font-bold text-blue-400 uppercase tracking-widest italic">RSS Feed Sources</h2>
-                <button onclick="loadFromR2()" class="text-[10px] text-slate-500 underline italic">R2 Reload</button>
+        <section id="tab-rss" class="tab-content active space-y-4">
+            <div class="flex justify-between items-center px-2">
+                <h2 class="text-xs font-bold text-blue-400 uppercase tracking-widest italic">RSS Feeds</h2>
+                <button onclick="addRss()" class="bg-blue-600 text-[10px] px-3 py-1 rounded-full font-bold">+ ADD</button>
             </div>
-            
-            <div id="rssList" class="space-y-2">
-                </div>
-            
-            <button onclick="addRss()" class="w-full py-3 border border-dashed border-slate-700 rounded-2xl text-slate-500 text-[10px] font-bold uppercase active:bg-slate-800 tracking-widest">
-                + フィード追加
-            </button>
+            <div id="rssList" class="space-y-2"></div>
         </section>
 
-        <section class="space-y-4">
-            <div class="flex justify-between items-end px-2">
-                <h2 class="text-[10px] font-bold text-purple-400 uppercase tracking-widest italic">Workflow Pipeline</h2>
+        <section id="tab-workflow" class="tab-content space-y-4">
+            <div class="flex justify-between items-center px-2">
+                <h2 class="text-xs font-bold text-purple-400 uppercase tracking-widest italic">Workflow</h2>
+                <button onclick="addAgent()" class="bg-purple-600 text-[10px] px-3 py-1 rounded-full font-bold">+ AGENT</button>
             </div>
-            
-            <div id="agentList" class="space-y-4">
-                </div>
-            
-            <button onclick="addAgent()" class="w-full py-5 border-2 border-dashed border-slate-700 rounded-3xl text-slate-500 font-bold text-xs active:bg-slate-800">
-                + エージェント追加
-            </button>
+            <div id="agentList" class="space-y-4"></div>
         </section>
 
-        <div class="fixed bottom-0 left-0 right-0 p-4 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 safe-bottom z-50">
-            <button onclick="saveToR2()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-4 rounded-2xl font-black text-lg shadow-2xl active:scale-95 transition-transform">
-                🚀 R2へ保存・即時デプロイ
+        <section id="tab-output" class="tab-content space-y-4">
+            <div class="flex justify-between items-center px-2">
+                <h2 class="text-xs font-bold text-emerald-400 uppercase tracking-widest italic">Latest Output</h2>
+                <button onclick="loadOutput()" class="text-[10px] text-slate-500 underline italic tracking-tighter">Refresh</button>
+            </div>
+            <div id="outputList" class="space-y-4"></div>
+        </section>
+    </div>
+
+    <nav class="fixed bottom-0 left-0 right-0 bg-slate-950/90 backdrop-blur-xl border-t border-slate-800 z-50">
+        <div class="flex justify-around items-stretch h-16 max-w-xl mx-auto">
+            <button onclick="switchTab('rss')" id="nav-rss" class="flex-1 flex flex-col items-center justify-center transition-all">
+                <span class="text-[10px] font-bold">RSS</span>
+            </button>
+            <button onclick="switchTab('workflow')" id="nav-workflow" class="flex-1 flex flex-col items-center justify-center transition-all">
+                <span class="text-[10px] font-bold">WORKFLOW</span>
+            </button>
+            <button onclick="switchTab('output')" id="nav-output" class="flex-1 flex flex-col items-center justify-center transition-all">
+                <span class="text-[10px] font-bold">OUTPUT</span>
+            </button>
+            <button onclick="saveToR2()" class="flex-1 bg-blue-600 flex flex-col items-center justify-center active:scale-95 transition-transform">
+                <span class="text-[10px] font-black leading-tight text-white">SAVE<br>DEPLOY</span>
             </button>
         </div>
-    </div>
+        <div class="bg-slate-950 h-[env(safe-area-inset-bottom)]"></div>
+    </nav>
 
     <script>
         let rss_feeds = [];
@@ -61,8 +75,7 @@
             if (window.VAULT) {
                 document.getElementById('st').innerText = "Authenticated";
                 await loadFromR2();
-            } else {
-                document.getElementById('st').innerText = "Vault Missing";
+                await loadOutput();
             }
         };
 
@@ -71,21 +84,23 @@
                 const response = await fetch('models.json');
                 availableModels = await response.json();
             } catch (e) {
-                availableModels = [
-                    { "value": "gpt-4o-mini", "label": "GPT-4o Mini" },
-                    { "value": "o3-mini", "label": "o3-mini" },
-                    { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" }
-                ];
+                availableModels = [{ "value": "gpt-4o-mini", "label": "GPT-4o Mini" }, { "value": "o3-mini", "label": "o3-mini" }];
             }
         }
 
         async function getS3() {
             return new AWS.S3({
                 endpoint: `https://${window.VAULT.accId}.r2.cloudflarestorage.com`,
-                accessKeyId: window.VAULT.keyId,
-                secretAccessKey: window.VAULT.secKey,
+                accessKeyId: window.VAULT.keyId, secretAccessKey: window.VAULT.secKey,
                 signatureVersion: 'v4', region: 'auto'
             });
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('nav button').forEach(el => el.classList.remove('active-tab'));
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+            document.getElementById(`nav-${tabId}`).classList.add('active-tab');
         }
 
         async function loadFromR2() {
@@ -93,105 +108,77 @@
                 const s3 = await getS3();
                 const res = await s3.getObject({ Bucket: window.VAULT.r2Bucket, Key: 'prompts.json' }).promise();
                 const config = JSON.parse(res.Body.toString());
-                
                 rss_feeds = config.rss_feeds || [];
                 workflow = config.workflow || [];
-                
                 renderRss();
                 renderWorkflow();
-                document.getElementById('st').innerText = "Connected";
-            } catch(e) { 
-                console.error(e);
-                document.getElementById('st').innerText = "R2 Error"; 
-            }
+                switchTab('rss');
+                document.getElementById('st').innerText = "Online";
+            } catch(e) { document.getElementById('st').innerText = "R2 Error"; }
         }
 
-        // --- RSS Management ---
+        async function loadOutput() {
+            const container = document.getElementById('outputList');
+            container.innerHTML = "<p class='text-center text-[10px] text-slate-500 py-10 italic'>Loading results...</p>";
+            try {
+                const s3 = await getS3();
+                const res = await s3.getObject({ Bucket: window.VAULT.r2Bucket, Key: 'api_output.json' }).promise();
+                const outputs = JSON.parse(res.Body.toString());
+                container.innerHTML = outputs.reverse().map(item => `
+                    <div class="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/50">
+                        <div class="text-[10px] text-slate-500 mb-1">${new Date(item.date).toLocaleString()}</div>
+                        <h3 class="font-bold text-sm mb-2 text-blue-300"><a href="${item.link}" target="_blank">${item.title}</a></h3>
+                        <div class="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap">${item.analysis}</div>
+                    </div>
+                `).join('');
+            } catch(e) { container.innerHTML = "<p class='text-center text-xs text-red-400 py-10'>No output found or R2 Error.</p>"; }
+        }
+
         function renderRss() {
             const container = document.getElementById('rssList');
             container.innerHTML = rss_feeds.map((url, i) => `
-                <div class="flex items-center gap-2 bg-slate-800/50 p-2 rounded-xl border border-slate-700">
-                    <input type="text" value="${url}" onchange="rss_feeds[${i}]=this.value" 
-                           class="bg-transparent flex-1 text-xs px-2 outline-none text-slate-300" placeholder="https://...">
-                    <button onclick="rss_feeds.splice(${i},1);renderRss()" class="text-slate-500 hover:text-red-400 px-2">✕</button>
+                <div class="flex items-center gap-2 bg-slate-800/50 p-3 rounded-xl border border-slate-700">
+                    <input type="text" value="${url}" onchange="rss_feeds[${i}]=this.value" class="bg-transparent flex-1 text-xs outline-none text-slate-300">
+                    <button onclick="rss_feeds.splice(${i},1);renderRss()" class="text-slate-500 text-lg px-2">✕</button>
                 </div>
             `).join('');
         }
 
-        function addRss() {
-            rss_feeds.push("");
-            renderRss();
-        }
+        function addRss() { rss_feeds.unshift(""); renderRss(); }
 
-        // --- Workflow Management ---
         function renderWorkflow() {
             const container = document.getElementById('agentList');
             container.innerHTML = workflow.map((agent, i) => `
-                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-xl">
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
                     <div class="flex items-center gap-2 mb-3">
-                        <div class="drag-handle p-2 text-slate-700 cursor-move">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
-                        </div>
-                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-800">
-                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1 text-slate-300">
-                            ${availableModels.map(m => `
-                                <option value="${m.value}" ${agent.model === m.value ? 'selected' : ''}>${m.label}</option>
-                            `).join('')}
+                        <div class="drag-handle p-2 text-slate-700 cursor-move">☰</div>
+                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-900">
+                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1">
+                            ${availableModels.map(m => `<option value="${m.value}" ${agent.model === m.value ? 'selected' : ''}>${m.label}</option>`).join('')}
                         </select>
-                        <button onclick="workflow.splice(${i},1);renderWorkflow()" class="text-slate-600 hover:text-red-400 text-xl ml-2">✕</button>
+                        <button onclick="workflow.splice(${i},1);renderWorkflow()" class="text-slate-600 text-xl ml-2">✕</button>
                     </div>
-                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-24 text-slate-400 outline-none focus:ring-1 ring-blue-500">${agent.prompt}</textarea>
+                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-400 outline-none focus:ring-1 ring-blue-500">${agent.prompt}</textarea>
                 </div>
             `).join('');
-
-            new Sortable(container, { handle: '.drag-handle', animation: 250, onEnd: (e) => {
-                const item = workflow.splice(e.oldIndex, 1)[0];
-                workflow.splice(e.newIndex, 0, item);
-                // 内部状態のみ更新し、再描画は少し遅らせて自然に見せる
-            }});
+            new Sortable(container, { handle: '.drag-handle', animation: 200 });
         }
 
         function addAgent() {
-            const defaultModel = availableModels.length > 0 ? availableModels[0].value : 'gpt-4o-mini';
-            workflow.push({ id: 'agent_'+Date.now(), model: defaultModel, prompt:'', enabled:true });
+            workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0].value, prompt:'', enabled:true });
             renderWorkflow();
         }
 
-        // --- Save Function ---
         async function saveToR2() {
             try {
-                document.getElementById('st').innerText = "Saving...";
                 const s3 = await getS3();
-                
-                // 空のフィードを除外して保存
-                const cleanRss = rss_feeds.filter(url => url.trim() !== "");
-                
                 const config = { 
-                    rss_feeds: cleanRss, 
-                    workflow: workflow, 
-                    settings: { 
-                        fetch_days: 3, 
-                        score_threshold: 7, 
-                        embedding_model: "text-embedding-3-small", 
-                        similarity_threshold: 0.85 
-                    } 
+                    rss_feeds: rss_feeds.filter(u => u.trim()), workflow, 
+                    settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
                 };
-
-                await s3.putObject({ 
-                    Bucket: window.VAULT.r2Bucket, 
-                    Key: 'prompts.json', 
-                    Body: JSON.stringify(config, null, 2), 
-                    ContentType: 'application/json' 
-                }).promise();
-                
-                document.getElementById('st').innerText = "Saved Successfully";
-                setTimeout(() => document.getElementById('st').innerText = "Connected", 2000);
-                alert('R2への保存が完了しました');
-            } catch(e) { 
-                console.error(e);
-                alert("保存に失敗しました。コンソールを確認してください。");
-                document.getElementById('st').innerText = "Save Error";
-            }
+                await s3.putObject({ Bucket: window.VAULT.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();
+                alert('Saved to R2!');
+            } catch(e) { alert("Save Error"); }
         }
     </script>
 </body>

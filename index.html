@@ -1,40 +1,123 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    </head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Orchestrator v3.2 - Master</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1555.0/aws-sdk.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <style>
+        .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 80px); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .active-tab { color: #60a5fa; border-top: 2px solid #60a5fa; background: #1e293b; }
+        .drag-handle { cursor: grab; }
+        /* スクロールバー非表示 */
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
 <body class="bg-slate-900 text-slate-100 select-none pb-20">
+    <div class="max-w-xl mx-auto p-4 safe-bottom">
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-xl font-black text-blue-400 italic tracking-tighter">ORCHESTRATOR v3.2</h1>
+            <span id="st" class="text-[10px] font-mono text-slate-500 uppercase">Initialising</span>
+        </header>
+
+        <section id="tab-rss" class="tab-content active space-y-4">
+            <div class="flex justify-between items-center px-2">
+                <h2 class="text-xs font-bold text-blue-400 uppercase tracking-widest italic">RSS Feed Sources</h2>
+                <button onclick="addRss()" class="bg-blue-600 text-[10px] px-3 py-1 rounded-full font-bold">+ ADD FEED</button>
+            </div>
+            <div id="rssList" class="space-y-3"></div>
+        </section>
+
+        <section id="tab-workflow" class="tab-content space-y-4">
+            <div class="flex justify-between items-center px-2">
+                <h2 class="text-xs font-bold text-purple-400 uppercase tracking-widest italic">Workflow Pipeline</h2>
+                <button onclick="addAgent()" class="bg-purple-600 text-[10px] px-3 py-1 rounded-full font-bold">+ AGENT</button>
+            </div>
+            <div id="agentList" class="space-y-4"></div>
+        </section>
+
+        <section id="tab-output" class="tab-content space-y-4">
+            <div class="flex justify-between items-center px-2">
+                <h2 class="text-xs font-bold text-emerald-400 uppercase tracking-widest italic">Latest Output</h2>
+                <button onclick="loadOutput()" class="text-[10px] text-slate-500 underline italic tracking-tighter">Refresh</button>
+            </div>
+            <div id="outputList" class="space-y-4"></div>
+        </section>
+    </div>
+
+    <nav class="fixed bottom-0 left-0 right-0 bg-slate-950/90 backdrop-blur-xl border-t border-slate-800 z-50">
+        <div class="flex justify-around items-stretch h-16 max-w-xl mx-auto">
+            <button onclick="switchTab('rss')" id="nav-rss" class="flex-1 flex flex-col items-center justify-center transition-all active-tab">
+                <span class="text-[10px] font-bold uppercase">RSS</span>
+            </button>
+            <button onclick="switchTab('workflow')" id="nav-workflow" class="flex-1 flex flex-col items-center justify-center transition-all">
+                <span class="text-[10px] font-bold uppercase">Flow</span>
+            </button>
+            <button onclick="switchTab('output')" id="nav-output" class="flex-1 flex flex-col items-center justify-center transition-all">
+                <span class="text-[10px] font-bold uppercase">Result</span>
+            </button>
+            <button onclick="saveToR2()" class="flex-1 bg-blue-600 flex flex-col items-center justify-center active:scale-95 transition-transform">
+                <span class="text-[10px] font-black leading-tight text-white uppercase">SAVE</span>
+            </button>
+            <button onclick="triggerRun()" class="flex-1 bg-emerald-600 flex flex-col items-center justify-center active:scale-95 transition-transform">
+                <span class="text-[10px] font-black leading-tight text-white uppercase">RUN</span>
+            </button>
+        </div>
+        <div class="bg-slate-950 h-[env(safe-area-inset-bottom)]"></div>
+    </nav>
+
     <script>
-        // 【初期設定】ここに直接書き込んで完了！
+        // ==========================================
+        // CONFIGURATION (Cloudflare & GitHub)
+        // ==========================================
         const CONFIG = {
-            accId: "あなたのアカウントID",
-            r2Bucket: "バケット名",
-            keyId: "アクセスキーID",
-            secKey: "シークレットキー",
-            ghToken: "ghp_xxxxxxxxxxxx",
-            ghRepo: "user/repo"
+            accId: "YOUR_CLOUDFLARE_ACCOUNT_ID",
+            r2Bucket: "YOUR_BUCKET_NAME",
+            keyId: "YOUR_R2_ACCESS_KEY_ID",
+            secKey: "YOUR_R2_SECRET_ACCESS_KEY",
+            ghToken: "ghp_xxxxxxxxxxxxxxxxxxxx", // GitHub Personal Access Token
+            ghRepo: "username/repository"         // user/repo
         };
 
         let rss_feeds = [];
         let workflow = [];
-        let availableModels = [];
+        let availableModels = [
+            { "value": "gpt-4o-mini", "label": "GPT-4o Mini" },
+            { "value": "o3-mini", "label": "o3-mini" },
+            { "value": "claude-3-5-sonnet-latest", "label": "Claude 3.5 Sonnet" }
+        ];
+        let sortableInstance = null;
 
         window.onload = async () => {
-            await loadModels();
-            // ページが開いた瞬間に実行
-            document.getElementById('st').innerText = "Authorized";
+            document.getElementById('st').innerText = "Connecting...";
             await loadFromR2();
             await loadOutput();
         };
 
-        // S3（R2）接続設定をCONFIGから読み込むように変更
+        // R2 Client
         async function getS3() {
             return new AWS.S3({
                 endpoint: `https://${CONFIG.accId}.r2.cloudflarestorage.com`,
-                accessKeyId: CONFIG.keyId, secretAccessKey: CONFIG.secKey,
-                signatureVersion: 'v4', region: 'auto'
+                accessKeyId: CONFIG.keyId, 
+                secretAccessKey: CONFIG.secKey,
+                signatureVersion: 'v4', 
+                region: 'auto'
             });
         }
 
+        // ページ切り替え
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('nav button').forEach(el => el.classList.remove('active-tab'));
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+            document.getElementById(`nav-${tabId}`).classList.add('active-tab');
+        }
+
+        // R2から設定読み込み
         async function loadFromR2() {
             try {
                 const s3 = await getS3();
@@ -47,12 +130,16 @@
                 renderRss();
                 renderWorkflow();
                 document.getElementById('st').innerText = "Online";
-            } catch(e) { document.getElementById('st').innerText = "R2 Error"; }
+            } catch(e) { 
+                console.error(e);
+                document.getElementById('st').innerText = "R2 Sync Error"; 
+            }
         }
 
+        // 出力結果の読み込み
         async function loadOutput() {
             const container = document.getElementById('outputList');
-            container.innerHTML = "<p class='text-center text-[10px] py-10 italic text-slate-500'>Fetching...</p>";
+            container.innerHTML = "<p class='text-center text-[10px] py-10 italic text-slate-500'>Fetching updates...</p>";
             try {
                 const s3 = await getS3();
                 const res = await s3.getObject({ Bucket: CONFIG.r2Bucket, Key: 'api_output.json' }).promise();
@@ -64,26 +151,101 @@
                         <div class="text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap">${item.analysis}</div>
                     </div>
                 `).join('');
-            } catch(e) { container.innerHTML = "<p class='text-center text-xs text-red-400 py-10'>No data found.</p>"; }
+            } catch(e) { 
+                container.innerHTML = "<p class='text-center text-xs text-red-400 py-10'>No data found in R2.</p>"; 
+            }
         }
 
+        // RSS描画
+        function renderRss() {
+            const container = document.getElementById('rssList');
+            container.innerHTML = rss_feeds.map((item, i) => `
+                <div class="bg-slate-800/40 p-3 rounded-2xl border border-slate-700/50 relative">
+                    <button onclick="rss_feeds.splice(${i},1);renderRss()" class="absolute top-2 right-2 text-slate-600 p-1">✕</button>
+                    <div class="space-y-2 pr-6">
+                        <input type="text" placeholder="Site Name" value="${item.name || ''}" 
+                               onchange="rss_feeds[${i}].name=this.value" 
+                               class="w-full bg-transparent text-[10px] font-bold text-blue-400 border-b border-slate-700 outline-none pb-1">
+                        <input type="text" placeholder="URL (https://...)" value="${item.url || ''}" 
+                               onchange="rss_feeds[${i}].url=this.value" 
+                               class="w-full bg-transparent text-xs text-slate-400 outline-none">
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addRss() { rss_feeds.unshift({ name: "", url: "" }); renderRss(); }
+
+        // ワークフロー描画
+        function renderWorkflow() {
+            const container = document.getElementById('agentList');
+            if (sortableInstance) sortableInstance.destroy();
+            container.innerHTML = workflow.map((agent, i) => `
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-xl mb-4">
+                    <div class="flex items-center gap-2 mb-3 flex-wrap">
+                        <div class="drag-handle p-2 text-slate-700 hover:text-blue-500">☰</div>
+                        <input value="${agent.id}" onchange="workflow[${i}].id=this.value" class="bg-transparent font-black text-blue-400 text-sm w-24 outline-none border-b border-slate-900">
+                        <select onchange="workflow[${i}].scope=this.value" class="bg-slate-800 text-[9px] px-2 py-1 rounded-lg font-bold text-purple-300 outline-none">
+                            <option value="item" ${agent.scope === 'item' ? 'selected' : ''}>Individual</option>
+                            <option value="collection" ${agent.scope === 'collection' ? 'selected' : ''}>Batch</option>
+                        </select>
+                        <select onchange="workflow[${i}].model=this.value" class="bg-slate-800 text-[10px] px-2 py-1 rounded-lg font-bold flex-1 text-slate-300 min-w-[100px]">
+                            ${availableModels.map(m => `<option value="${m.value}" ${agent.model === m.value ? 'selected' : ''}>${m.label}</option>`).join('')}
+                        </select>
+                        <button onclick="workflow.splice(${i},1);renderWorkflow()" class="text-slate-600 text-xl ml-2">✕</button>
+                    </div>
+                    <textarea onchange="workflow[${i}].prompt=this.value" class="w-full bg-slate-900 p-3 rounded-xl text-xs h-32 text-slate-400 outline-none focus:ring-1 ring-blue-500">${agent.prompt}</textarea>
+                </div>
+            `).join('');
+            
+            sortableInstance = new Sortable(container, {
+                handle: '.drag-handle', animation: 250,
+                onEnd: (e) => {
+                    const movedItem = workflow.splice(e.oldIndex, 1)[0];
+                    workflow.splice(e.newIndex, 0, movedItem);
+                }
+            });
+        }
+
+        function addAgent() {
+            workflow.push({ id: 'agent_'+Date.now(), model: availableModels[0].value, prompt:'', enabled:true, scope: 'item' });
+            renderWorkflow();
+        }
+
+        // R2へ保存（デプロイ）
         async function saveToR2() {
             try {
                 document.getElementById('st').innerText = "Syncing...";
                 const s3 = await getS3();
-                const config = { 
+                const configToSave = { 
                     rss_feeds: rss_feeds.filter(f => f.url.trim()), 
                     workflow: workflow, 
-                    settings: { fetch_days:3, score_threshold:7, embedding_model:"text-embedding-3-small", similarity_threshold:0.85 } 
+                    settings: { 
+                        fetch_days: 3, 
+                        score_threshold: 7, 
+                        embedding_model: "text-embedding-3-small", 
+                        similarity_threshold: 0.85 
+                    } 
                 };
-                await s3.putObject({ Bucket: CONFIG.r2Bucket, Key: 'prompts.json', Body: JSON.stringify(config,null,2), ContentType: 'application/json' }).promise();
+                await s3.putObject({ 
+                    Bucket: CONFIG.r2Bucket, 
+                    Key: 'prompts.json', 
+                    Body: JSON.stringify(configToSave, null, 2), 
+                    ContentType: 'application/json' 
+                }).promise();
+                
                 document.getElementById('st').innerText = "Online";
-                alert('Success: Configuration Deployed');
-            } catch(e) { alert("Error saving to R2"); }
+                alert('Success: Configuration Synced to R2');
+            } catch(e) { 
+                alert("Save failed: Check R2 Credentials"); 
+                document.getElementById('st').innerText = "Offline";
+            }
         }
 
+        // GitHub Actions 実行
         async function triggerRun() {
             if (!confirm('Start Orchestrator processing now?')) return;
+
             try {
                 document.getElementById('st').innerText = "Dispatching...";
                 const response = await fetch(`https://api.github.com/repos/${CONFIG.ghRepo}/dispatches`, {
@@ -98,12 +260,18 @@
 
                 if (response.ok) {
                     alert('Success: GitHub Action triggered');
-                } else { throw new Error('API Error'); }
-            } catch(e) { alert(`Trigger failed: ${e.message}`); }
-            finally { document.getElementById('st').innerText = "Online"; }
+                    document.getElementById('st').innerText = "Processing";
+                } else {
+                    const err = await response.json();
+                    throw new Error(err.message || 'GitHub API Error');
+                }
+            } catch(e) {
+                alert(`Trigger failed: ${e.message}`);
+                document.getElementById('st').innerText = "Error";
+            } finally {
+                setTimeout(() => { document.getElementById('st').innerText = "Online"; }, 3000);
+            }
         }
-
-        // ... その他レンダリング系の関数 (renderRss, renderWorkflow等) は変更なし ...
     </script>
 </body>
 </html>

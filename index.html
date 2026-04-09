@@ -20,7 +20,12 @@
     <div class="max-w-xl mx-auto p-4 safe-bottom">
         <header class="flex justify-between items-center mb-6">
             <h1 class="text-xl font-black text-blue-400 italic tracking-tighter">ORCHESTRATOR v3.2</h1>
-            <span id="st" class="text-[10px] font-mono text-slate-500 uppercase">Initialising</span>
+            <div class="text-right">
+                <div id="cf-user-area" class="text-[9px] font-mono text-blue-500 mb-1 hidden">
+                    <span id="cf-email"></span> | <button onclick="logoutCf()" class="underline hover:text-blue-300">LOGOUT</button>
+                </div>
+                <span id="st" class="text-[10px] font-mono text-slate-500 uppercase">Initialising</span>
+            </div>
         </header>
 
         <section id="tab-rss" class="tab-content active space-y-4">
@@ -76,6 +81,9 @@
         let sortableInstance = null;
 
         window.onload = async () => {
+            // Cloudflare 認証チェックを追加
+            await checkCfAuth();
+            
             await loadModels();
             if (window.VAULT) {
                 document.getElementById('st').innerText = "Authenticated";
@@ -83,6 +91,29 @@
                 await loadOutput();
             }
         };
+
+        // Cloudflare Access ユーザー情報を取得する関数
+        async function checkCfAuth() {
+            try {
+                const response = await fetch('/cdn-cgi/access/get-identity');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.email) {
+                        document.getElementById('cf-user-area').classList.remove('hidden');
+                        document.getElementById('cf-email').innerText = data.email.toUpperCase();
+                    }
+                }
+            } catch (e) {
+                console.log("Cloudflare Access is not active or reachable.");
+            }
+        }
+
+        // Cloudflare Access ログアウト関数
+        function logoutCf() {
+            if(confirm('Logout from Cloudflare?')) {
+                window.location.href = '/cdn-cgi/access/logout';
+            }
+        }
 
         async function loadModels() {
             try {
@@ -213,17 +244,14 @@
             } catch(e) { alert("Error saving to R2"); }
         }
 
-        // 入力ダイアログ方式に更新
         async function triggerRun() {
             const vault = window.VAULT || {};
             
-            // トークンが設定されていない、またはプレースホルダーの場合に入力を求める
             let token = vault.ghToken;
             if (!token || token.startsWith("ghp_xxx")) {
                 token = prompt("GitHub Personal Access Token (ghp_...) を入力してください");
             }
             
-            // リポジトリ名も同様
             let repo = vault.ghRepo;
             if (!repo || repo.includes("username/")) {
                 repo = prompt("リポジトリ名 (ユーザー名/リポジトリ名) を入力してください", repo || "");

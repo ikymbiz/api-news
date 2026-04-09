@@ -10,10 +10,25 @@ const { cosineSimilarity } = require('./lib/utils');
 
 async function run() {
   console.log("=== START: Multi-Provider Orchestrator ===");
+  
+  // --- ログ管理用変数の初期化 ---
   const errorLogs = [];
+  const processLogs = []; // 全件の推移を記録するログ
+
   const logError = (context, message, details = null) => {
     errorLogs.push({ time: new Date().toLocaleString('ja-JP'), context, message, details });
     console.error(`[${context}] ${message}`);
+  };
+
+  const logProcess = (title, url, status, detail) => {
+    processLogs.push({
+      time: new Date().toLocaleString('ja-JP'),
+      title,
+      url,
+      status, // 'SUCCESS', 'FILTERED', 'SKIPPED', 'ERROR'
+      detail
+    });
+    console.log(`[${status}] ${title} - ${detail}`);
   };
 
   // 設定の読み込み
@@ -71,7 +86,11 @@ async function run() {
   const vectorDb = JSON.parse(await r2.download('vectors.json') || "[]");
   const pending = allItems.filter(i => !db.some(d => d.link === i.link));
 
-  if (pending.length === 0) return console.log("No new articles.");
+  if (pending.length === 0) {
+    console.log("No new articles.");
+    await saveActivityLogs(errorLogs, processLogs);
+    return;
+  }
 
   let targets = pending;
 
@@ -81,13 +100,11 @@ async function run() {
 
   for (const step of collectionSteps) {
     try {
-      console.log(`\n>> Batch Processing: [${step.id}] Model: ${step.model}`);
+      console.log(`\n>> Batch Processing: [${step.id}]`);
       let allScoredItems = [];
 
       for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
         const chunk = targets.slice(i, i + CHUNK_SIZE);
-        console.log(`   Processing chunk: ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(targets.length / CHUNK_SIZE)} (${chunk.length} items)`);
-
         try {
           const batchRes = await askAI(
             step.model, 
@@ -98,15 +115,20 @@ async function run() {
           const chunkScores = JSON.parse(jsonMatch ? jsonMatch[0] : batchRes).items || [];
           allScoredItems.push(...chunkScores);
         } catch (e) {
-          logError("CollectionChunk", step.id, `Chunk starting at ${i}: ${e.message}`);
+          logError("CollectionChunk", step.id, e.message);
         }
       }
 
+      // フィルタリングとログ記録
       targets = targets.filter(p => {
         const scored = allScoredItems.find(s => s.url === p.link);
-        return (scored?.score || 0) >= settings.score_threshold;
+        const score = scored?.score || 0;
+        const passed = score >= settings.score_threshold;
+        if (!passed) {
+          logProcess(p.title, p.link, 'FILTERED', `Batch Score: ${score} (Threshold: ${settings.score_threshold})`);
+        }
+        return passed;
       });
-      console.log(`>> Filtered: ${targets.length} articles remaining after [${step.id}].`);
     } catch (e) { logError("CollectionStep", step.id, e.message); }
   }
 
@@ -116,8 +138,6 @@ async function run() {
 
   for (const article of targets) {
     try {
-      console.log(`\n>> Analyzing: ${article.title}`);
-      
       // スクレイピング
       let bodyText = "";
       try {
@@ -125,64 +145,105 @@ async function run() {
         const html = await res.text();
         const doc = new JSDOM(html, { url: article.link });
         bodyText = (new Readability(doc.window.document)).parse()?.textContent.trim().substring(0, 10000) || "";
-      } catch (e) { logError("Scraping", article.title, "Snippet Fallback"); }
+      } catch (e) { logError("Scraping", article.title, "Fallback to snippet"); }
 
       const finalContent = bodyText || article.contentSnippet || article.content || "N/A";
 
       // ベクトルによる重複チェック
       const emb = await openai.embeddings.create({ model: settings.embedding_model, input: article.title });
       const vec = emb.data[0].embedding;
-      if (vectorDb.some(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85))) {
-        console.log("   Skipped: High similarity detected.");
+      const simMatch = vectorDb.find(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85));
+      if (simMatch) {
+        logProcess(article.title, article.link, 'SKIPPED', `High similarity with: ${simMatch.link}`);
         continue;
       }
 
       // ワークフロー（エージェント・チェイン）の実行
       let currentContext = `Title: ${article.title}\nContent: ${finalContent}`;
+      let shouldSkip = false;
+      let skipReason = "";
+
       for (const step of config.workflow) {
         if (!step.enabled || step.scope !== 'item') continue;
-        console.log(`   Agent: [${step.id}] Model: ${step.model}`);
+
+        // キーワード・項目フィルタ判定
+        if (step.type === 'filter') {
+          try {
+            const jsonMatch = currentContext.match(/\{.*\}/s);
+            const data = JSON.parse(jsonMatch ? jsonMatch[0] : currentContext);
+            const targetValue = String(data[step.target_key] || "").toLowerCase();
+            const matchType = step.match_type || "partial";
+
+            const checkMatch = (list, val) => {
+              if (!list || !Array.isArray(list)) return false;
+              return list.some(kw => matchType === 'exact' ? val === kw.toLowerCase() : val.includes(kw.toLowerCase()));
+            };
+
+            if (step.exclude && checkMatch(step.exclude, targetValue)) {
+              shouldSkip = true;
+              skipReason = `Excluded keyword in ${step.target_key}`;
+              break;
+            }
+            if (step.include && step.include.length > 0 && !checkMatch(step.include, targetValue)) {
+              shouldSkip = true;
+              skipReason = `Required keyword not found in ${step.target_key}`;
+              break;
+            }
+          } catch (e) {
+            console.warn(`Filter Error: ${e.message}`);
+          }
+          continue; 
+        }
+
         currentContext = await askAI(step.model, step.prompt, currentContext);
       }
 
-      // 結果の蓄積
+      if (shouldSkip) {
+        logProcess(article.title, article.link, 'FILTERED', skipReason);
+        continue;
+      }
+
+      // 成功の記録
+      logProcess(article.title, article.link, 'SUCCESS', 'Fully processed and analyzed');
       apiOutput.push({ title: article.title, link: article.link, analysis: currentContext, date: nowStr });
       db.push({ link: article.link, date: nowStr });
       vectorDb.push({ link: article.link, vec, date: nowStr });
-    } catch (e) { logError("Chain", article.title, e.message); }
+
+    } catch (e) { 
+      logError("Chain", article.title, e.message);
+      logProcess(article.title, article.link, 'ERROR', e.message);
+    }
   }
 
-  // --- 3. データの保存と期限管理 (3日間保持) ---
+  // --- 3. データの保存と期限管理 ---
   const retentionCutoff = new Date(new Date().getTime() - (daysLimit * 24 * 60 * 60 * 1000));
-
   const updateAndUpload = async (filename, newData, oldData) => {
-    const merged = [...newData, ...oldData]
-      .filter(item => item.date && new Date(item.date) > retentionCutoff);
+    const merged = [...newData, ...oldData].filter(item => item.date && new Date(item.date) > retentionCutoff);
     await r2.upload(filename, JSON.stringify(merged, null, 2), 'application/json');
   };
 
-  if (apiOutput.length > 0 || targets.length > 0) {
-    // API出力
+  if (apiOutput.length > 0 || processLogs.length > 0) {
     const oldOutput = JSON.parse(await r2.download('api_output.json') || "[]");
     await updateAndUpload('api_output.json', apiOutput, oldOutput);
-
-    // URL DB
     await r2.upload('articles_db.json', JSON.stringify(db.filter(d => new Date(d.date) > retentionCutoff)), 'application/json');
-
-    // Vector DB
     await r2.upload('vectors.json', JSON.stringify(vectorDb.filter(v => v.date && new Date(v.date) > retentionCutoff)), 'application/json');
   }
 
-  await saveLogs(errorLogs);
+  await saveActivityLogs(errorLogs, processLogs);
   console.log("=== SUCCESS ===");
 }
 
-async function saveLogs(logs) {
+async function saveActivityLogs(errors, processes) {
   try {
-    const old = JSON.parse(await r2.download('error_log.json') || "[]");
-    const mergedLogs = [...logs, ...old].slice(0, 100);
-    await r2.upload('error_log.json', JSON.stringify(mergedLogs, null, 2), 'application/json');
-  } catch (e) { console.error(e); }
+    // エラーログの保存
+    const oldErrors = JSON.parse(await r2.download('error_log.json') || "[]");
+    await r2.upload('error_log.json', JSON.stringify([...errors, ...oldErrors].slice(0, 100), null, 2), 'application/json');
+
+    // 全件プロセスの保存（これが「全件確認」用）
+    const oldProcesses = JSON.parse(await r2.download('process_log.json') || "[]");
+    // 直近200件程度の履歴を保持
+    await r2.upload('process_log.json', JSON.stringify([...processes, ...oldProcesses].slice(0, 200), null, 2), 'application/json');
+  } catch (e) { console.error("Log saving failed:", e); }
 }
 
 run().catch(console.error);

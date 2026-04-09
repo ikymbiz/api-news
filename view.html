@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>AI News Feed</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .title { font-size: 1.2rem; font-weight: bold; color: #333; text-decoration: none; }
+        .date { font-size: 0.8rem; color: #888; margin-bottom: 10px; }
+        .analysis { background: #eef9f5; padding: 15px; border-left: 4px solid #2ecc71; margin-top: 10px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI News Feed</h1>
+        <div id="news-list">読み込み中...</div>
+    </div>
+
+    <script>
+        const DATA_URL = 'https://ai-news.feed.ddashpot.com/api_output.json';
+
+        async function loadNews() {
+            try {
+                // キャッシュ回避のためにタイムスタンプを付与
+                const response = await fetch(`${DATA_URL}?t=${Date.now()}`);
+                const data = await response.json();
+                
+                const container = document.getElementById('news-list');
+                container.innerHTML = ''; // クリア
+
+                data.reverse().forEach(item => { // 新しい順に表示
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `
+                        <div class="date">${new Date(item.date).toLocaleString()}</div>
+                        <a href="${item.link}" target="_blank" class="title">${item.title}</a>
+                        <div class="analysis">${item.analysis}</div>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (err) {
+                document.getElementById('news-list').innerText = 'データの取得に失敗しました。CORS設定を確認してください。';
+                console.error(err);
+            }
+        }
+
+        loadNews();
+    </script>
+</body>
+</html>

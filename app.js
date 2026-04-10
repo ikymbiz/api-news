@@ -177,7 +177,7 @@ async function run() {
         const simMatch = vectorDb.find(v => cosineSimilarity(vec, v.vec) > (settings.similarity_threshold || 0.85));
         if (simMatch) {
           logProcess(article.title, article.link, 'SKIPPED', `High similarity with: ${simMatch.link}`);
-          return; // map内のためcontinueからreturnに変更
+          return; 
         }
 
         // ワークフロー（エージェント・チェイン）の実行
@@ -191,9 +191,20 @@ async function run() {
           // キーワード・項目フィルタ判定
           if (step.type === 'filter') {
             try {
-              const jsonMatch = currentContext.match(/\{.*\}/s);
-              const data = JSON.parse(jsonMatch ? jsonMatch[0] : currentContext);
+              // ▼▼▼ 修整箇所2：安全なJSONパースとスキップ処理 ▼▼▼
+              const jsonMatch = currentContext.match(/\{[\s\S]*\}/);
+              let data = {};
+              
+              if (jsonMatch) {
+                data = JSON.parse(jsonMatch[0]);
+              } else {
+                console.warn(`Filter Warning: Not a valid JSON. Context snippet: ${currentContext.substring(0, 30).replace(/\n/g, " ")}...`);
+                continue; 
+              }
+              
               const targetValue = String(data[step.target_key] || "").toLowerCase();
+              // ▲▲▲ 修整箇所2 終了 ▲▲▲
+
               const matchType = step.match_type || "partial";
 
               const checkMatch = (list, val) => {
@@ -217,12 +228,15 @@ async function run() {
             continue; 
           }
 
-          currentContext = await askAI(step.model, step.prompt, currentContext);
+          // ▼▼▼ 修整箇所3：AIへのプロンプト指示の強化 ▼▼▼
+          const enforceJsonPrompt = step.prompt + "\n\nCRITICAL: You MUST output ONLY valid JSON. Do NOT include any other text, markdown formatting, or explanations.";
+          currentContext = await askAI(step.model, enforceJsonPrompt, currentContext);
+          // ▲▲▲ 修整箇所3 終了 ▲▲▲
         }
 
         if (shouldSkip) {
           logProcess(article.title, article.link, 'FILTERED', skipReason);
-          return; // map内のためcontinueからreturnに変更
+          return; 
         }
 
         // 成功の記録
@@ -266,4 +280,14 @@ async function saveActivityLogs(errors, processes) {
   } catch (e) { console.error("Log saving failed:", e); }
 }
 
-run().catch(console.error);
+// ▼▼▼ 修整箇所1：プロセスの強制終了を追加 ▼▼▼
+run()
+  .then(() => {
+    console.log("--- Process Complete. Exiting... ---");
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("Fatal Error:", err);
+    process.exit(1);
+  });
+// ▲▲▲ 修整箇所1 終了 ▲▲▲

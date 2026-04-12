@@ -21,6 +21,7 @@ async function run() {
   // --- ログ管理用変数の初期化 ---
   const errorLogs = [];
   const processLogs = []; // 全件の推移を記録するログ
+  const archiveBuffer = []; // 【追加】蓄積用（アーカイブ）バッファ
 
   const logError = (context, message, details = null) => {
     errorLogs.push({ time: new Date().toLocaleString('ja-JP'), context, message, details });
@@ -241,7 +242,19 @@ async function run() {
 
         // 成功の記録
         logProcess(article.title, article.link, 'SUCCESS', 'Fully processed and analyzed');
+        
+        // 通常のAPI出力用
         apiOutput.push({ title: article.title, link: article.link, analysis: currentContext, date: nowStr });
+        
+        // 【追加】アーカイブ蓄積用（フルコンテンツを含む）
+        archiveBuffer.push({
+          title: article.title,
+          link: article.link,
+          analysis: currentContext,
+          fullContent: finalContent,
+          date: nowStr
+        });
+
         db.push({ link: article.link, date: nowStr });
         vectorDb.push({ link: article.link, vec, date: nowStr });
 
@@ -264,6 +277,29 @@ async function run() {
     await updateAndUpload('api_output.json', apiOutput, oldOutput);
     await r2.upload('articles_db.json', JSON.stringify(db.filter(d => new Date(d.date) > retentionCutoff)), 'application/json');
     await r2.upload('vectors.json', JSON.stringify(vectorDb.filter(v => v.date && new Date(v.date) > retentionCutoff)), 'application/json');
+  }
+
+  // --- 【追加】アーカイブの保存とカタログの更新 ---
+  if (archiveBuffer.length > 0) {
+    const jstDate = new Date().toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '');
+    const archivePath = `archive/data_${jstDate}.json`;
+    
+    // 日別ファイルへの保存（追記マージ）
+    const existingArchive = JSON.parse(await r2.download(archivePath) || "[]");
+    const mergedArchive = [...archiveBuffer, ...existingArchive];
+    await r2.upload(archivePath, JSON.stringify(mergedArchive, null, 2), 'application/json');
+
+    // 検索用カタログの更新
+    const catalogPath = `archive_catalog.json`;
+    const catalog = JSON.parse(await r2.download(catalogPath) || "{}");
+    if (!catalog[jstDate]) catalog[jstDate] = [];
+    
+    // カタログにはタイトルとURLのみを軽量に記録
+    const catalogEntries = archiveBuffer.map(a => ({ title: a.title, link: a.link }));
+    catalog[jstDate] = [...catalogEntries, ...catalog[jstDate]];
+    await r2.upload(catalogPath, JSON.stringify(catalog, null, 2), 'application/json');
+    
+    console.log(`[ARCHIVE] Saved ${archiveBuffer.length} articles to ${archivePath}`);
   }
 
   await saveActivityLogs(errorLogs, processLogs);
